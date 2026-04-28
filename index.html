@@ -863,7 +863,8 @@
             </div>
           </div>
           <div className="pt-2 pb-8 flex justify-center">
-            <PillButton onClick={() => onContinue({ comfortable, uncomfortable })}>Continue</PillButton>
+            <PillButton onClick={() => onContinue({ comfortable, uncomfortable })}
+              disabled={!comfortable.trim() && !uncomfortable.trim()}>Continue</PillButton>
           </div>
         </div>
       );
@@ -895,7 +896,7 @@
             </div>
           </div>
           <div className="pt-3 pb-8 flex justify-center">
-            <PillButton onClick={() => onContinue(text)}>Create My Mirror</PillButton>
+            <PillButton onClick={() => onContinue(text)} disabled={!text.trim()}>Create My Mirror</PillButton>
           </div>
         </div>
       );
