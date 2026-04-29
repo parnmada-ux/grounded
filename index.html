@@ -351,6 +351,167 @@
       ],
     };
 
+    // ============================================================
+    // REFLECTION POOL — 24 values × 4 daily questions
+    // (Parn — feel free to refine copy on any of these)
+    // ============================================================
+    const REFLECTION_POOL = {
+      Freedom: [
+        "What's one thing you did just for yourself today?",
+        "When did you feel most free this week?",
+        "What would you do today if no one had any expectations of you?",
+        "What's one rule you'd like to break — gently — this week?",
+      ],
+      Independence: [
+        "What's one decision you made today that felt entirely yours?",
+        "When did you last solve something on your own — and how did it feel?",
+        "What's one thing you do better when no one's watching?",
+        "Where in your life do you feel most self-reliant?",
+      ],
+      Creativity: [
+        "What's something you made today — even if it's small?",
+        "When did you last surprise yourself with an idea?",
+        "What's a creative thing you used to love but stopped doing?",
+        "If you had a free hour to make anything, what would it be?",
+      ],
+      Curiosity: [
+        "What's one question you've been carrying around lately?",
+        "What did you learn today — even something tiny?",
+        "What's something you wish you understood better?",
+        "Where does your mind wander when it's free?",
+      ],
+      Success: [
+        "What's one thing you finished today that felt like yours?",
+        "When did you last feel proud of yourself?",
+        "What's a small win you keep forgetting to celebrate?",
+        "What does success feel like in your body, not just your mind?",
+      ],
+      Ambition: [
+        "What's one thing you're working toward right now?",
+        "What did you do today that moves you forward?",
+        "What's a goal you've been postponing — and why?",
+        "Who do you want to become this year?",
+      ],
+      Growth: [
+        "What's something you understand now that you didn't a year ago?",
+        "What's one thing you tried recently that scared you a little?",
+        "Where are you growing right now — even quietly?",
+        "What's an old belief you're letting go of?",
+      ],
+      Impact: [
+        "Whose day did you make better this week?",
+        "What's one small thing you did that mattered to someone?",
+        "Who in your life would you like to thank today?",
+        "How did you show up for someone today?",
+      ],
+      Family: [
+        "What's something your family taught you that you carry today?",
+        "Who in your family did you think of today?",
+        "What's a family memory that makes you feel like yourself?",
+        "How do you stay connected to family these days?",
+      ],
+      Friendship: [
+        "Who are the people who feel like home to you?",
+        "Who made you laugh recently?",
+        "When did you last reach out to a friend with no agenda?",
+        "What's something a friend has helped you see about yourself?",
+      ],
+      Love: [
+        "What's something you love about your life right now?",
+        "Who or what makes you feel deeply seen?",
+        "How did you give or receive love today?",
+        "What does love look like for you these days?",
+      ],
+      Belonging: [
+        "Where do you feel most like yourself?",
+        "Who are your people right now?",
+        "When did you last feel deeply welcomed somewhere?",
+        "What does belonging feel like for you?",
+      ],
+      Stability: [
+        "What grounds you when life feels chaotic?",
+        "What's a small routine that keeps you steady?",
+        "Where in your life do you feel most secure?",
+        "What does 'enough' look like for you today?",
+      ],
+      Health: [
+        "How did you take care of your body today?",
+        "What does your body need right now?",
+        "When did you last move just because it felt good?",
+        "What's one habit that makes you feel healthier?",
+      ],
+      Peace: [
+        "When did you feel calmest today?",
+        "What does inner peace look like for you?",
+        "What's one thing that consistently brings you peace?",
+        "Where do you go when you need quiet?",
+      ],
+      Adventure: [
+        "When did you last try something for the first time?",
+        "Where do you want to wander next?",
+        "What's a small adventure you could take this week?",
+        "When did you last let yourself be a beginner?",
+      ],
+      Fun: [
+        "What made you laugh today?",
+        "When was the last time you played, just for fun?",
+        "What's something silly you love?",
+        "What's a small joy you noticed today?",
+      ],
+      Kindness: [
+        "How were you kind to yourself today?",
+        "Who did you show up for this week?",
+        "What's a small act of kindness you witnessed?",
+        "Where could you offer yourself more grace right now?",
+      ],
+      Honesty: [
+        "What's something true you've been avoiding saying?",
+        "When did you last tell yourself the whole truth?",
+        "What honest moment surprised you today?",
+        "Where in your life do you most want to be honest?",
+      ],
+      Loyalty: [
+        "Who has been showing up for you lately?",
+        "What's a quiet promise you keep with yourself?",
+        "Who in your life have you been with for a long time — and what do they mean to you?",
+        "What does loyalty look like for you?",
+      ],
+      Justice: [
+        "What's something unfair you wish you could change?",
+        "When did you last speak up — even softly?",
+        "What cause has been on your mind recently?",
+        "Who do you want to fight for, gently?",
+      ],
+      Nature: [
+        "When did you last notice something beautiful outside?",
+        "What place in nature feels like coming home?",
+        "How did the weather make you feel today?",
+        "What's something the natural world is teaching you?",
+      ],
+      Spirituality: [
+        "What feels sacred to you these days?",
+        "When did you last feel connected to something bigger?",
+        "What practice grounds you spiritually?",
+        "What gives your life meaning right now?",
+      ],
+      Gratitude: [
+        "What are you grateful for today?",
+        "Who in your life makes you feel lucky?",
+        "What's a small thing you took for granted that you noticed today?",
+        "What would you miss if it suddenly disappeared?",
+      ],
+    };
+
+    const pickDailyReflection = (topValues) => {
+      const tv = (topValues && topValues.length) ? topValues : null;
+      if (!tv) return null; // caller must guard — only pick when user has core values set
+      const v = tv[Math.floor(Math.random() * tv.length)];
+      const list = REFLECTION_POOL[v] || [];
+      if (!list.length) return { dayKey: todayKey(), valueKey: v, question: "What's one thing you did for yourself today?" };
+      const q = list[Math.floor(Math.random() * list.length)];
+      return { dayKey: todayKey(), valueKey: v, question: q };
+    };
+
     const allMissionsForValues = (values) => {
       const out = [];
       (values || []).forEach(v => {
@@ -364,7 +525,8 @@
     // build initial 3 cards: 1 random per core value (or fill from pool union if <3 core values)
     // Each card carries its own ticked flag; slots always remain 3 across the week.
     const initLaunchpadWeek = (topValues) => {
-      const tv = (topValues && topValues.length) ? topValues : ['Freedom','Creativity','Growth'];
+      const tv = (topValues && topValues.length) ? topValues : null;
+      if (!tv) return null; // caller must guard — only init when user has core values
       const seen = new Set();
       const shown = [];
       tv.forEach(v => {
@@ -449,6 +611,21 @@
       </svg>
     );
 
+    // Vertically-centered empty-state banner shown when My Mirror has no core values yet
+    // (used by Launchpad and Today's Reflection — fills the middle of the phone frame)
+    const EmptyMirrorBanner = ({ feature, onSetup }) => (
+      <div className="flex-1 flex items-center justify-center px-6 pb-32">
+        <div className="card-outline p-6 text-center w-full">
+          <div className="text-3xl mb-3">🪞</div>
+          <h3 className="font-serif text-[20px] text-g-deep mb-2">Set up your Mirror first.</h3>
+          <p className="text-g-charcoal text-sm leading-relaxed mb-5">
+            Choose 3 core values in My Mirror to see your {feature}.
+          </p>
+          <PillButton onClick={onSetup}>Go to My Mirror →</PillButton>
+        </div>
+      </div>
+    );
+
     // Generic month calendar grid with green dots on flagged days
     const MonthCalendar = ({ hasDot, onPick, selected }) => {
       const now = new Date();
@@ -491,7 +668,7 @@
       <div className="phone-frame fade-in">
         <div className="flex-1 flex flex-col items-center justify-center text-center px-8">
           <Logo size="xl" />
-          <p className="mt-3 text-g-charcoal text-base px-2">"Becoming more at home in who you are."</p>
+          <p className="mt-3 text-g-charcoal text-base px-2 leading-snug">"Becoming more at home<br/>in who you are."</p>
           <div className="mt-10">
             <PillButton onClick={onBegin}>I want to feel like myself again !</PillButton>
           </div>
@@ -985,15 +1162,19 @@
             <h1 className="font-serif text-[30px] text-g-charcoal">
               {greeting.text} <span>{greeting.emoji}</span>
             </h1>
-            <p className="font-serif text-[19px] text-g-charcoal mt-6">Remember What Matters</p>
-            <div className="card flex justify-around py-3 mt-3">
-              {(data.topValues || ['Freedom','Creativity','Growth']).map(v => (
-                <span key={v} className="text-g-green font-semibold text-sm">{v}</span>
-              ))}
-            </div>
+            {(data.topValues && data.topValues.length > 0) && (
+              <>
+                <p className="font-serif text-[19px] text-g-charcoal mt-6">Remember What Matters</p>
+                <div className="card flex justify-around py-3 mt-3">
+                  {data.topValues.map(v => (
+                    <span key={v} className="text-g-green font-semibold text-sm">{v}</span>
+                  ))}
+                </div>
+              </>
+            )}
             <button onClick={onReflect} className="card mt-5 p-5 w-full text-left block">
               <h3 className="font-serif text-[20px] text-g-charcoal">Today's Reflection</h3>
-              <p className="text-g-charcoal text-sm mt-2 leading-relaxed">"What's one thing you did for<br/>YOURSELF recently?"</p>
+              <p className="text-g-charcoal text-sm mt-2 leading-relaxed">"{(data.dailyQuestion && data.dailyQuestion.question) || "What's one thing you did for yourself today?"}"</p>
               <p className="text-g-charcoal text-sm text-right mt-4">Answer →</p>
             </button>
             <button onClick={onLaunchpad} className="card mt-4 p-5 w-full text-left block">
@@ -1020,12 +1201,30 @@
     // ============================================================
     // 11. DAILY PROMPT (Today's Reflection)
     // ============================================================
-    const ReflectionScreen = ({ data, onSave, onSkip, onHome, onHistory }) => {
+    const ReflectionScreen = ({ data, onSave, onSkip, onHome, onHistory, onSetupMirror }) => {
       const today = todayKey();
       const existing = (data.reflections && data.reflections[today]) || null;
       const [text, setText] = useState(existing ? existing.a : '');
-      const valueLink = (data.topValues && data.topValues[0]) || 'Freedom';
-      const prompt = "What's one thing you did for YOURSELF recently?";
+      const hasCore = !!(data.topValues && data.topValues.length);
+      const dq = data.dailyQuestion;
+      const valueLink = (dq && dq.valueKey) || (data.topValues && data.topValues[0]) || 'Freedom';
+      const prompt = (dq && dq.question) || "What's one thing you did for yourself today?";
+
+      if (!hasCore) {
+        return (
+          <div className="phone-frame fade-in">
+            <div className="px-6 pt-6 pb-2"><BackArrow onClick={onHome} label="Home" /></div>
+            <div className="px-6">
+              <h2 className="font-serif text-[24px] text-g-charcoal mt-2 mb-4">Today's Reflection</h2>
+            </div>
+            <EmptyMirrorBanner feature="daily reflection" onSetup={onSetupMirror} />
+            <div className="text-center pb-6">
+              <button onClick={onHistory} className="text-g-deep text-sm underline font-semibold">📅 View my reflections →</button>
+            </div>
+          </div>
+        );
+      }
+
       return (
         <div className="phone-frame fade-in">
           <div className="px-6 pt-6 pb-2"><BackArrow onClick={onHome} label="Home" /></div>
@@ -1047,7 +1246,7 @@
             </div>
           </div>
           <div className="pt-3 pb-3 flex justify-center">
-            <PillButton onClick={() => onSave(prompt, text)} disabled={!text.trim()}>Save</PillButton>
+            <PillButton onClick={() => onSave(prompt, text, valueLink)} disabled={!text.trim()}>Save</PillButton>
           </div>
           <div className="text-center pb-6">
             <button onClick={onHistory} className="text-g-deep text-sm underline font-semibold">📅 View my reflections →</button>
@@ -1221,21 +1420,23 @@
           <div className="space-y-3 mt-5">
             <div className="card-outline p-5">
               <h4 className="font-bold text-g-charcoal text-[14px] mb-3">MY CORE VALUES</h4>
-              <ul className="space-y-1">
-                {(data.topValues || ['Freedom','Creativity','Growth']).map(v => (
-                  <li key={v} className="text-g-charcoal text-sm flex items-center gap-2">
-                    <span className="text-green-600">●</span>{v}
-                  </li>
-                ))}
-              </ul>
+              {(data.topValues && data.topValues.length) ? (
+                <ul className="space-y-1">
+                  {data.topValues.map(v => (
+                    <li key={v} className="text-g-charcoal text-sm flex items-center gap-2">
+                      <span className="text-green-600">●</span>{v}
+                    </li>
+                  ))}
+                </ul>
+              ) : <p className="text-g-gray text-sm">—</p>}
             </div>
             <div className="card-outline p-5">
               <h4 className="font-bold text-g-charcoal text-[14px] mb-2">MY ALIGNED SELF</h4>
-              <p className="text-g-charcoal text-sm leading-relaxed">"{data.alignedSelf || 'Curious, energetic, traveling, creating and exploring ideas.'}"</p>
+              <p className="text-g-charcoal text-sm leading-relaxed">{data.alignedSelf ? `"${data.alignedSelf}"` : <span className="text-g-gray">—</span>}</p>
             </div>
             <div className="card-outline p-5">
               <h4 className="font-bold text-g-charcoal text-[14px] mb-2">MY QUOTE</h4>
-              <p className="text-g-charcoal text-sm leading-relaxed">"{data.quote || 'The more you f*ck around, the more you find out.'}"</p>
+              <p className="text-g-charcoal text-sm leading-relaxed">{data.quote ? `"${data.quote}"` : <span className="text-g-gray">—</span>}</p>
             </div>
           </div>
           <div className="text-center mt-5 space-y-3">
@@ -1263,26 +1464,28 @@
           <div className="space-y-3 mt-5">
             <div className="card-outline p-5">
               <h4 className="font-bold text-g-charcoal text-[14px] mb-3">MY CORE VALUES</h4>
-              <ul className="space-y-1">
-                {(data.topValues || ['Freedom','Creativity','Growth']).map(v => (
-                  <li key={v} className="text-g-charcoal text-sm flex items-center gap-2">
-                    <span className="text-green-600">●</span>{v}
-                  </li>
-                ))}
-              </ul>
+              {(data.topValues && data.topValues.length) ? (
+                <ul className="space-y-1">
+                  {data.topValues.map(v => (
+                    <li key={v} className="text-g-charcoal text-sm flex items-center gap-2">
+                      <span className="text-green-600">●</span>{v}
+                    </li>
+                  ))}
+                </ul>
+              ) : <p className="text-g-gray text-sm">—</p>}
             </div>
             <div className="card-outline p-5">
               <h4 className="font-bold text-g-charcoal text-[14px] mb-2">MY ALIGNED SELF</h4>
-              <p className="text-g-charcoal text-sm leading-relaxed">"{data.alignedSelf || 'Curious, energetic, traveling, creating and exploring ideas.'}"</p>
+              <p className="text-g-charcoal text-sm leading-relaxed">{data.alignedSelf ? `"${data.alignedSelf}"` : <span className="text-g-gray">—</span>}</p>
             </div>
             <div className="card-outline p-5">
               <h4 className="font-bold text-g-charcoal text-[14px] mb-2">WHAT HELPS ME</h4>
-              <p className="text-g-charcoal text-sm leading-relaxed">"{data.whatHelps || 'Going for a walk, journaling, calling a friend, music.'}"</p>
-              <p className="text-g-gold text-sm leading-relaxed mt-3">✨ Try one of these now?</p>
+              <p className="text-g-charcoal text-sm leading-relaxed">{data.whatHelps ? `"${data.whatHelps}"` : <span className="text-g-gray">—</span>}</p>
+              {data.whatHelps && <p className="text-g-gold text-sm leading-relaxed mt-3">✨ Try one of these now?</p>}
             </div>
             <div className="card-outline p-5">
               <h4 className="font-bold text-g-charcoal text-[14px] mb-2">MY QUOTE</h4>
-              <p className="text-g-charcoal text-sm leading-relaxed">"{data.quote || 'The more you f*ck around, the more you find out.'}"</p>
+              <p className="text-g-charcoal text-sm leading-relaxed">{data.quote ? `"${data.quote}"` : <span className="text-g-gray">—</span>}</p>
             </div>
           </div>
           <div className="text-center mt-5 space-y-3">
@@ -1326,26 +1529,57 @@
           <div className="space-y-3 pb-3">
             <div className="card-outline p-5">
               <h4 className="font-bold text-g-charcoal text-[14px] mb-3">MY CORE VALUES</h4>
-              <ul className="space-y-1">
-                {(data.topValues || ['Freedom','Creativity','Growth']).map(v => (
-                  <li key={v} className="text-g-charcoal text-sm flex items-center gap-2">
-                    <span className="text-green-600">●</span>{v}
-                  </li>
-                ))}
-              </ul>
+              {(data.topValues && data.topValues.length) ? (
+                <ul className="space-y-1">
+                  {data.topValues.map(v => (
+                    <li key={v} className="text-g-charcoal text-sm flex items-center gap-2">
+                      <span className="text-green-600">●</span>{v}
+                    </li>
+                  ))}
+                </ul>
+              ) : <p className="text-g-gray text-sm">—</p>}
             </div>
             <div className="card-outline p-5">
               <h4 className="font-bold text-g-charcoal text-[14px] mb-2">MY ALIGNED SELF</h4>
-              <p className="text-g-charcoal text-sm leading-relaxed">"{data.alignedSelf || 'Curious, energetic, traveling, creating and exploring ideas.'}"</p>
+              <p className="text-g-charcoal text-sm leading-relaxed">{data.alignedSelf ? `"${data.alignedSelf}"` : <span className="text-g-gray">—</span>}</p>
             </div>
             <div className="card-outline p-5">
               <h4 className="font-bold text-g-charcoal text-[14px] mb-2">WHAT HELPS ME</h4>
-              <p className="text-g-charcoal text-sm leading-relaxed">"{data.whatHelps || 'Going for a walk, journaling, calling a friend, music.'}"</p>
+              <p className="text-g-charcoal text-sm leading-relaxed">{data.whatHelps ? `"${data.whatHelps}"` : <span className="text-g-gray">—</span>}</p>
             </div>
           </div>
         </div>
         <div className="pt-3 pb-7 flex justify-center">
           <PillButton onClick={onRemember}>I remember now</PillButton>
+        </div>
+      </div>
+    );
+
+    // ============================================================
+    // 15E. NEED TO TALK (Ground Me only — separate from 18 Support)
+    // ============================================================
+    const NeedToTalk = ({ onBack }) => (
+      <div className="phone-frame fade-in">
+        <div className="flex-1 overflow-y-auto no-scrollbar px-7 pt-16">
+          <div className="text-center">
+            <div className="text-3xl mb-3">💬</div>
+            <h2 className="font-serif text-[26px] text-g-deep">Need to talk ?</h2>
+          </div>
+          <div className="card-outline p-6 mt-8">
+            <p className="text-g-charcoal text-[15px] leading-relaxed text-center">
+              Reach out to someone you trust — a friend, family member, or professional.
+            </p>
+            <div className="border-t border-g-line my-4"></div>
+            <p className="text-g-charcoal text-[15px] leading-relaxed text-center">🇹🇭 Thailand Mental Health</p>
+            <p className="text-g-green font-bold text-[15px] leading-relaxed text-center">Hotline: 1323 (24 hrs)</p>
+            <p className="text-g-charcoal text-[15px] leading-relaxed text-center mt-4">🌐 International Resources:</p>
+            <p className="text-g-green font-bold text-[15px] leading-relaxed text-center">findahelpline.com</p>
+            <div className="border-t border-g-line my-4"></div>
+            <p className="text-g-gray text-[15px] italic text-center">(More resources coming soon)</p>
+          </div>
+        </div>
+        <div className="pb-10 flex justify-center">
+          <PillButton onClick={onBack}>Back</PillButton>
         </div>
       </div>
     );
@@ -1669,11 +1903,32 @@
     // ============================================================
     // 14. LAUNCHPAD
     // ============================================================
-    const LaunchpadScreen = ({ data, onHome, onTick, onHistory }) => {
+    const LaunchpadScreen = ({ data, onHome, onTick, onHistory, onSetupMirror }) => {
+      const hasCore = !!(data.topValues && data.topValues.length);
       const week = data.launchpadWeek;
       const shown = (week && week.shown) || [];
       const usedCount = (week ? week.used.length : 0);
       const allDone = shown.length > 0 && shown.every(s => s.ticked);
+      const [confirmCard, setConfirmCard] = useState(null);
+
+      if (!hasCore) {
+        return (
+          <div className="phone-frame fade-in">
+            <div className="px-6 pt-6 pb-2 flex items-center justify-between">
+              <BackArrow onClick={onHome} label="Home" />
+              <button onClick={onHome} className="text-g-charcoal text-base">Done</button>
+            </div>
+            <div className="px-6">
+              <h2 className="font-serif text-[24px] text-g-charcoal mt-2 mb-4">Your Launchpad</h2>
+            </div>
+            <EmptyMirrorBanner feature="weekly suggestions" onSetup={onSetupMirror} />
+            <div className="text-center pb-6">
+              <button onClick={onHistory} className="text-g-deep text-sm underline font-semibold">📅 View my history →</button>
+            </div>
+          </div>
+        );
+      }
+
       return (
         <div className="phone-frame fade-in">
           <div className="px-6 pt-6 pb-2 flex items-center justify-between">
@@ -1694,9 +1949,9 @@
                   {s.ticked ? (
                     <p className="block ml-auto mt-3 text-g-gray text-sm font-semibold text-right">[ ✓ ] tried</p>
                   ) : (
-                    <button onClick={() => onTick(s.id, i)}
+                    <button onClick={() => setConfirmCard({ id: s.id, slot: i })}
                       className="block ml-auto mt-3 text-g-charcoal text-sm font-semibold">
-                      [ ] I'll try this
+                      [ ] I've tried this
                     </button>
                   )}
                 </div>
@@ -1716,6 +1971,33 @@
               <button onClick={onHistory} className="text-g-deep text-sm underline font-semibold">📅 View my history →</button>
             </div>
           </div>
+
+          {/* Confirmation modal — fades phone frame, asks before committing tick */}
+          {confirmCard && (
+            <div className="absolute inset-0 z-50 flex items-center justify-center pb-20 px-6"
+                 style={{background: 'rgba(0,0,0,0.4)'}}
+                 onClick={() => setConfirmCard(null)}>
+              <div className="card p-6 text-center w-full"
+                   style={{maxWidth: '290px'}}
+                   onClick={e => e.stopPropagation()}>
+                <div className="text-3xl mb-3">🌱</div>
+                <h3 className="font-serif text-[20px] text-g-deep mb-2">Have you completed this?</h3>
+                <p className="text-g-charcoal text-sm leading-relaxed mb-5">
+                  Tap "Yes" only after you've actually tried this mission.
+                </p>
+                <div className="flex gap-3 justify-center">
+                  <button onClick={() => setConfirmCard(null)}
+                          className="px-5 py-2 rounded-full border border-g-line text-g-charcoal font-semibold text-sm">
+                    Not yet
+                  </button>
+                  <button onClick={() => { onTick(confirmCard.id, confirmCard.slot); setConfirmCard(null); }}
+                          className="px-5 py-2 rounded-full bg-g-green text-white font-semibold text-sm">
+                    Yes, I did
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       );
     };
@@ -1804,23 +2086,99 @@
         prompt:'"What did you do for yourself today?"',
         entryHeading:'What did you do for yourself today?',
         store:'"Write 3 small things you did for yourself today."',
-        type:'numbered', defaultFields: 3 },
+        type:'numbered', defaultFields: 3,
+        info: {
+          subtitle: 'Build yourself, daily',
+          intro: 'This exercise helps you notice and choose things that are for you.',
+          body: [
+            'It creates a simple moment to ask: "What did I do today that was for me?"',
+            'It can be something small, practical, comforting, meaningful, or bigger — as long as it supported you.',
+          ],
+          prompt: 'Write 3 things you did for yourself today.',
+          closing: 'Anything done for you belongs here.',
+        }
+      },
       { id:'thank_me',  emoji:'💚', title:'Thank Me',    short:'THANK ME',
         prompt:'"Write 1-2 sentences thanking yourself."',
         entryHeading:'What are you thanking yourself for?',
         store:'"Write 1-2 sentences thanking yourself for something — anything — you did today."',
-        type:'numbered', defaultFields: 2 },
+        type:'numbered', defaultFields: 2,
+        info: {
+          subtitle: 'Build yourself, daily',
+          intro: 'This exercise helps you thank yourself in simple words.',
+          body: [
+            'It gives you a small pause to appreciate something you did, instead of moving past it too quickly.',
+            'Write 1–2 sentences thanking yourself for anything that comes to mind.',
+          ],
+          prompt: 'No need to choose the "right" thing.',
+          closing: 'Just let the words come simply.',
+        }
+      },
       { id:'small_wins',emoji:'✨', title:'Small Wins',  short:'SMALL WINS',
         prompt:'"Note 1-2 things you accomplished today."',
         entryHeading:'What did you get done today?',
         store:'"Note 1-2 things you accomplished today."',
-        type:'numbered', defaultFields: 2 },
+        type:'numbered', defaultFields: 2,
+        info: {
+          subtitle: 'Build yourself, daily',
+          intro: 'This exercise helps you notice what felt like a win today.',
+          body: [
+            'Progress is not only found at the finish line. It also happens in small steps, quiet effort, and moments you might overlook.',
+            'Write 1–2 things that felt like a win for you today.',
+          ],
+          prompt: 'If it felt like a win to you, it counts.',
+          closing: '',
+        }
+      },
       { id:'self_date', emoji:'🌸', title:'Self-Date',   short:'SELF-DATE',
         prompt:'"Spend time with yourself."',
         entryHeading:'Tell me about your date with yourself.',
         store:'"Spend time with yourself — try something new or do something you already love."',
-        type:'text' },
+        type:'text',
+        info: {
+          subtitle: 'Build yourself, daily',
+          intro: 'This exercise helps you spend intentional time on your own and choose for yourself.',
+          body: [
+            'It gives you space to notice what you want, what you like, and what feels right for you.',
+            'Choose one way to spend time with yourself.',
+          ],
+          prompt: 'Simple, quiet, playful, or new — the choice belongs to you.',
+          closing: '',
+        }
+      },
     ];
+
+    // 19B1-4 — Exercise Information (per exercise)
+    const ExerciseInfo = ({ exercise, onBack }) => (
+      <div className="phone-frame fade-in">
+        <div className="px-6 pt-6 pb-2"><BackArrow onClick={onBack} /></div>
+        <div className="flex-1 overflow-y-auto no-scrollbar px-6">
+          <div className="text-center mt-1">
+            <h2 className="font-serif text-[26px] text-g-charcoal">
+              <span className="mr-1">{exercise.emoji}</span>{exercise.title}
+            </h2>
+            <p className="text-g-charcoal text-[15px] mt-1">{exercise.info.subtitle}</p>
+          </div>
+          <div className="card-outline p-6 mt-6 space-y-4">
+            <p className="text-g-charcoal text-[15px] leading-relaxed">{exercise.info.intro}</p>
+            <div className="border-t border-g-line"></div>
+            {exercise.info.body.map((b, i) => (
+              <p key={i} className="text-g-charcoal text-[15px] leading-relaxed">{b}</p>
+            ))}
+            <div className="border-t border-g-line"></div>
+            {exercise.info.prompt && (
+              <p className="text-g-charcoal text-[15px] leading-relaxed">{exercise.info.prompt}</p>
+            )}
+            {exercise.info.closing && (
+              <p className="text-g-charcoal text-[15px] leading-relaxed">{exercise.info.closing}</p>
+            )}
+          </div>
+        </div>
+        <div className="pt-4 pb-8 flex justify-center">
+          <PillButton onClick={onBack}>Back to my exercises</PillButton>
+        </div>
+      </div>
+    );
 
     // ============================================================
     // 19. MY PRACTICE
@@ -2089,9 +2447,10 @@
     // ============================================================
     const SettingsScreen = ({ onHome, onNav, onPremium, onSupport, onLogout }) => {
       const items = [
-        { label:'Reminders' },
         { label:'Account' },
+        { label:'Notifications & reminders' },
         { label:'Upgrade to Premium', action: onPremium },
+        { label:'Language' },
         { label:'Export my data' },
         { label:'Privacy policy' },
         { label:'🌱 Support & Resources', action: onSupport },
@@ -2114,6 +2473,7 @@
               className="card-outline w-full px-4 py-4 flex items-center justify-start mt-5">
               <span className="text-g-charcoal text-[15px] font-semibold">Log out</span>
             </button>
+            <div className="h-16"/>
           </div>
           <BottomNav active="settings" onNav={onNav} />
         </div>
@@ -2207,10 +2567,31 @@
       const [data, setData]       = useState(loadData());
       const [showDev, setShowDev] = useState(true);
       const [activeExerciseId, setActiveExerciseId] = useState(null);
+      const [activeInfoExerciseId, setActiveInfoExerciseId] = useState(null);
       const [groundMeFrom, setGroundMeFrom] = useState('gm_triage');
       const [activeMirrorField, setActiveMirrorField] = useState(null);
 
       useEffect(() => { saveData(data); }, [data]);
+
+      // Daily Reflection — pick fresh question on:
+      //   1) first load (no dailyQuestion yet)
+      //   2) day rollover (new day)
+      //   3) core values changed → current question's valueKey no longer in topValues
+      useEffect(() => {
+        const today = todayKey();
+        const dq = data.dailyQuestion;
+        const tv = (data.topValues && data.topValues.length) ? data.topValues : null;
+        if (!tv) return; // nothing to pick from yet — wait until user has core values
+        const needsRefresh =
+          !dq ||
+          dq.dayKey !== today ||
+          !tv.includes(dq.valueKey);
+        if (needsRefresh) {
+          const next = pickDailyReflection(tv);
+          if (next) setData(prev => ({ ...prev, dailyQuestion: next }));
+        }
+      }, [data.dailyQuestion, data.topValues]);
+
       const updateData = (patch) => setData(prev => ({ ...prev, ...patch }));
       const go = (next) => setScreen(next);
 
@@ -2252,10 +2633,10 @@
         updateData({ completed });
       };
 
-      const saveReflection = (q, a) => {
+      const saveReflection = (q, a, valueKey) => {
         const today = todayKey();
         const reflections = { ...(data.reflections || {}) };
-        reflections[today] = { q, a };
+        reflections[today] = { q, a, valueKey };
         updateData({ reflections });
       };
 
@@ -2311,10 +2692,13 @@
 
       // Launchpad — ensure week initialized + matches current week
       const ensureLaunchpadWeek = () => {
+        const tv = data.topValues;
+        if (!tv || !tv.length) return; // no core values → don't init
         const wk = weekKey();
         const cur = data.launchpadWeek;
         if (!cur || cur.weekKey !== wk) {
-          updateData({ launchpadWeek: initLaunchpadWeek(data.topValues) });
+          const next = initLaunchpadWeek(tv);
+          if (next) updateData({ launchpadWeek: next });
         }
       };
 
@@ -2406,7 +2790,7 @@
         case 'signin':
           view = <SignInScreen
             onSignIn={(u) => { updateData({ user: u }); go('home'); }}
-            onSignUp={() => go('signup')}
+            onSignUp={() => go('welcome')}
             onBack={() => go('welcome')}
           />; break;
         case 'values':
@@ -2471,10 +2855,11 @@
           />; break;
         case 'reflection':
           view = <ReflectionScreen data={data}
-            onSave={(q, a) => { saveReflection(q, a); go('home'); }}
+            onSave={(q, a, vk) => { saveReflection(q, a, vk); go('home'); }}
             onSkip={() => go('home')}
             onHome={() => go('home')}
-            onHistory={() => go('reflection_calendar')} />; break;
+            onHistory={() => go('reflection_calendar')}
+            onSetupMirror={() => go('mirror_edit_core')} />; break;
         case 'reflection_calendar':
           view = <ReflectionCalendar data={data} onBack={() => go('reflection')} />; break;
         case 'freewrite':
@@ -2517,7 +2902,7 @@
             go(groundMeFrom);
           }} />; break;
         case 'gm_support':
-          view = <SupportScreen onBack={() => go(groundMeFrom)} />; break;
+          view = <NeedToTalk onBack={() => go(groundMeFrom)} />; break;
 
         // ==== MIRROR ====
         case 'my_mirror':
@@ -2545,7 +2930,8 @@
           view = <LaunchpadScreen data={data}
             onHome={() => go('home')}
             onTick={(id, slot) => tickLaunchpad(id, slot)}
-            onHistory={() => go('launchpad_calendar')} />; break;
+            onHistory={() => go('launchpad_calendar')}
+            onSetupMirror={() => go('mirror_edit_core')} />; break;
         case 'launchpad_calendar':
           view = <LaunchpadCalendar data={data} onBack={() => go('launchpad')} />; break;
 
@@ -2569,7 +2955,12 @@
           view = <ExerciseStore data={data}
             onBack={() => go('my_practice')}
             onToggle={(id) => toggleStoreExercise(id)}
-            onInfo={() => go('practice_info')} />; break;
+            onInfo={(id) => { setActiveInfoExerciseId(id); go('exercise_info'); }} />; break;
+        case 'exercise_info': {
+          const ex = ALL_EXERCISES.find(e => e.id === activeInfoExerciseId) || ALL_EXERCISES[0];
+          view = <ExerciseInfo exercise={ex} onBack={() => go('exercise_store')} />;
+          break;
+        }
         case 'exercise_entry': {
           const ex = ALL_EXERCISES.find(e => e.id === activeExerciseId) || ALL_EXERCISES[0];
           view = <ExerciseEntry
@@ -2640,6 +3031,7 @@
         ['practice_welcome','PracticeWel(19A)'],
         ['my_practice','MyPractice(19)'],
         ['exercise_store','Store(19B)'],
+        ['exercise_info','ExInfo(19B1-4)'],
         ['exercise_entry','Entry(19C1-4)'],
         ['after_save','AfterSave(19C)'],
         ['calendar','PracCal(19D)'],
@@ -2655,13 +3047,14 @@
           {showDev && (
             <div className="fixed bottom-2 right-2 bg-white/95 backdrop-blur rounded-xl shadow-lg p-2 text-[10px] text-g-gray border border-gray-100 z-50" style={{maxWidth: 240}}>
               <div className="flex items-center justify-between mb-1">
-                <div className="font-semibold text-g-charcoal">Dev jump (V6):</div>
+                <div className="font-semibold text-g-charcoal">Dev jump (V7):</div>
                 <button onClick={() => setShowDev(false)} className="text-g-gray text-base leading-none ml-2" aria-label="Hide">×</button>
               </div>
               <div className="flex flex-wrap gap-1 max-h-[280px] overflow-y-auto no-scrollbar">
                 {devScreens.map(([key, label]) => (
                   <button key={key} onClick={() => {
                       if (key === 'exercise_entry') setActiveExerciseId('do_for_me');
+                      if (key === 'exercise_info') setActiveInfoExerciseId('do_for_me');
                       if (key === 'mirror_edit_field') setActiveMirrorField('quote');
                       if (key === 'launchpad' || key === 'launchpad_calendar') ensureLaunchpadWeek();
                       go(key);
@@ -2702,6 +3095,7 @@
                         }
                       },
                       launchpadWeek: initLaunchpadWeek(['Freedom','Creativity','Growth']),
+                      dailyQuestion: pickDailyReflection(['Freedom','Creativity','Growth']),
                     };
                     setData(baseData);
                     go('home');
