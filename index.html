@@ -727,7 +727,7 @@
     }
 
     // V15/B1: Welcome with primary anonymous-first CTA + secondary account paths.
-    // PRIMARY: "Ready to feel like myself !" — sage filled pill, routes to
+    // PRIMARY: "I'm ready to feel like myself !" — sage filled pill, routes to
     //   Resonance funnel (anonymous-first philosophy, matches V14 voice).
     // SECONDARY: Continue with Google (hidden in fallback mode) + Sign up with
     //   email — white pills, slightly smaller for visual subordination.
@@ -770,7 +770,7 @@
               onClick={onContinueAnon}
               className="mt-9 w-full max-w-[300px] px-6 py-3.5 rounded-full bg-g-green text-white text-[15px] font-semibold transition-all active:scale-[0.98] active:bg-g-deep"
             >
-              Ready to feel like myself !
+              I'm ready to feel like myself !
             </button>
 
             {/* B2 ERROR BANNER — sits above secondary stack when present.
@@ -1032,6 +1032,10 @@
           }
           // On success: A3+J1 listener fires → routes to 'values'. Component unmounts.
           if (onSubmitted) onSubmitted();
+          // Defensive: clear pending in case the listener is delayed (e.g., backend
+          // ack arrives but auth-state event lags). Component will unmount on route,
+          // so this is mostly preventive — React 18 silently no-ops on unmounted.
+          setPending(false);
         } catch (e) {
           console.error('[C1] signUpWithEmail threw:', e);
           setError('Couldn’t create account. Try again?');
@@ -1204,6 +1208,10 @@
           }
           // On success: A3+J1 listener fires → routes to home/values. Component unmounts.
           if (onSubmitted) onSubmitted();
+          // Defensive: clear pending in case the listener is delayed (e.g., backend
+          // ack arrives but auth-state event lags). Component will unmount on route,
+          // so this is mostly preventive — React 18 silently no-ops on unmounted.
+          setPending(false);
         } catch (e) {
           console.error('[C2] signInWithEmail threw:', e);
           setError('Couldn’t sign in. Try again?');
@@ -3985,6 +3993,42 @@
     );
 
     // ============================================================
+    // V15/C5 MIGRATION OVERLAY — anonymous → signed-in transition.
+    // Shown for 1s minimum after firebase.js auto-migrates localStorage
+    // data into Firestore. Detection logic lives in the A3 listener.
+    // Visual matches BootSplash so the user reads it as one continuous
+    // Grounded moment, not a popup.
+    // ============================================================
+    const MigrationOverlay = () => (
+      <div
+        className="fade-in"
+        style={{
+          position: 'fixed', inset: 0,
+          backgroundColor: '#F0F7F4',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          zIndex: 9999,
+        }}
+        role="status"
+        aria-live="polite"
+      >
+        <div className="text-center px-8">
+          <svg className="animate-spin mx-auto mb-5" width="32" height="32" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <circle cx="12" cy="12" r="10" stroke="#E8F0EC" strokeWidth="2.5" />
+            <path d="M12 2 a10 10 0 0 1 10 10" stroke="#5B8A72" strokeWidth="2.5" strokeLinecap="round" />
+          </svg>
+          <p style={{
+            fontFamily: '"Crimson Text", Georgia, serif',
+            fontSize: '20px',
+            color: '#3D5E4C',
+            lineHeight: 1.4,
+          }}>
+            Moving your reflections<br/>to your account…
+          </p>
+        </div>
+      </div>
+    );
+
+    // ============================================================
     // APP — Screen Router
     // ============================================================
     const App = () => {
@@ -4008,6 +4052,12 @@
       // when user taps "Sign in instead?" on the email-already-in-use banner;
       // C2 (sign-in screen) reads it as the initial value of its email input.
       const [signInPrefill, setSignInPrefill] = useState('');
+
+      // V15/C5: shown briefly when an anonymous user with localStorage data
+      // signs in/up — covers the destination screen during firebase.js's
+      // auto-migration of their reflections to Firestore. 1s minimum hold,
+      // detection logic lives in the A3 listener below.
+      const [migrating, setMigrating] = useState(false);
 
       // V15/J1: pure resolver — picks the right screen given current auth + data.
       // Uses fine-grained resume so users don't lose mid-onboarding progress.
@@ -4116,6 +4166,20 @@
             ? groundedApi.groundedSync.getDataNow()
             : data;
           const next = resolveInitialScreen({ user, data: liveData });
+
+          // V15/C5: detect migration moment. firebase.js's auto-migration in
+          // onAuthStateChanged runs BEFORE notifyAuth fires here, but it does
+          // not reset currentDocData — so liveData at this moment is still the
+          // pre-migration anonymous data. If it has any keys (matches firebase.js
+          // line 241 hasLocal threshold), migration just happened: show overlay.
+          // Backend ticket for v1.0.x: expose `lastMigrationResult` for cleaner
+          // signaling instead of inferring from data shape.
+          const justSignedIn = !!user && !wasInitial;
+          const hadAnonData  = liveData && Object.keys(liveData).length > 0;
+          if (justSignedIn && hadAnonData) {
+            setMigrating(true);
+            setTimeout(() => setMigrating(false), 1000);
+          }
 
           if (user) {
             // Signed in (sign-up, sign-in, or returning user). Route per resolver.
@@ -4712,6 +4776,7 @@
       return (
         <div className="stage">
           {view}
+          {migrating && <MigrationOverlay />}
           {showDev && (
             <div className="fixed bottom-2 right-2 bg-white/95 backdrop-blur rounded-xl shadow-lg p-2 text-[10px] text-g-gray border border-gray-100 z-50" style={{maxWidth: 240}}>
               <div className="flex items-center justify-between mb-1">
