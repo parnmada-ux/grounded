@@ -679,12 +679,19 @@
     // ============================================================
     // 1. WELCOME
     // ============================================================
-    // V15/B2: map raw Firebase auth error codes → warm, non-technical copy.
-    // Returns null for "silent" cases (user intentionally cancelled the popup —
-    // no banner needed, the disabled state already cleared). Never surface raw
-    // codes to users; log them via console.warn for debugging instead.
-    function mapAuthError(code) {
-      if (!code) return 'Couldn’t sign in. Try again?';
+    // V15/B2 + C1: map raw Firebase auth error codes → warm, non-technical copy.
+    // Returns null for "silent" cases (user intentionally cancelled the popup).
+    // Returns an object { message, code } for cases that need an inline action
+    // (e.g., email-already-in-use → "Sign in instead?" link rendered by caller).
+    // Otherwise returns a string. Never surface raw codes to users; log them
+    // via console.warn for debugging instead.
+    // The `context` param ('signin' default | 'signup') only affects the generic
+    // fallback copy. Specific codes have unambiguous messages regardless.
+    function mapAuthError(code, context) {
+      const generic = context === 'signup'
+        ? 'Couldn’t create account. Try again?'
+        : 'Couldn’t sign in. Try again?';
+      if (!code) return generic;
       switch (code) {
         case 'auth/popup-closed-by-user':
         case 'auth/cancelled-popup-request':
@@ -693,13 +700,34 @@
           return 'Looks like your browser blocked the sign-in window. Allow popups and try again.';
         case 'auth/network-request-failed':
           return 'Can’t connect right now. Check your internet?';
+        case 'auth/email-already-in-use':
+          // Object form so SignUpScreen renders inline "Sign in instead?" link.
+          return { message: 'Looks like there’s already an account with this email.', code };
+        case 'auth/invalid-email':
+          return 'That doesn’t look like an email yet — check the format?';
+        case 'auth/weak-password':
+          return 'Try a longer password — 8 characters or more.';
+        // V15/C2: sign-in error codes.
+        case 'auth/wrong-password':
+        case 'auth/invalid-credential':
+          // Firebase v10+ emits 'invalid-credential' as a generic for both
+          // wrong-password and user-not-found when "Email enumeration
+          // protection" is on (security: don't reveal whether email exists).
+          return 'That doesn’t match. Try again?';
+        case 'auth/user-not-found':
+          // Object form so SignInScreen renders inline "Sign up?" link.
+          // (Only fires on older Firebase config; modern projects emit
+          // 'invalid-credential' instead.)
+          return { message: 'No account with that email.', code };
+        case 'auth/too-many-requests':
+          return 'Too many tries. Take a breath, try again in a few minutes.';
         default:
-          return 'Couldn’t sign in. Try again?';
+          return generic;
       }
     }
 
     // V15/B1: Welcome with primary anonymous-first CTA + secondary account paths.
-    // PRIMARY: "I want to feel like myself !" — sage filled pill, routes to
+    // PRIMARY: "Ready to feel like myself !" — sage filled pill, routes to
     //   Resonance funnel (anonymous-first philosophy, matches V14 voice).
     // SECONDARY: Continue with Google (hidden in fallback mode) + Sign up with
     //   email — white pills, slightly smaller for visual subordination.
@@ -742,7 +770,7 @@
               onClick={onContinueAnon}
               className="mt-9 w-full max-w-[300px] px-6 py-3.5 rounded-full bg-g-green text-white text-[15px] font-semibold transition-all active:scale-[0.98] active:bg-g-deep"
             >
-              I want to feel like myself !
+              Ready to feel like myself !
             </button>
 
             {/* B2 ERROR BANNER — sits above secondary stack when present.
@@ -961,45 +989,164 @@
     );
 
     // ============================================================
-    // 4A. SIGN UP
+    // 4A. SIGN UP (V15/C1 — wired to groundedAuth.signUpWithEmail)
     // ============================================================
-    const SignUpScreen = ({ onCreate, onSignIn, onBack }) => {
-      const [email, setEmail] = useState('');
+    // Strips V14's fake social buttons (Google now lives on Welcome; Apple/FB
+    // deferred per F2). Display name optional. Show-password toggle for typo
+    // catching without a confirm field. Submit gates on email format + 8+ char
+    // password. B2-style spinner inside button + warm error banner on failure.
+    // On 'auth/email-already-in-use' the banner gets an inline "Sign in instead?"
+    // link that pre-fills the email on the sign-in screen via App's
+    // signInPrefill state. On success: A3+J1 listener fires → resolver routes
+    // to mirror onboarding ('values'), no manual navigation needed here.
+    const SignUpScreen = ({ groundedAuth, onSubmitted, onSignIn, onSignInInstead, onBack }) => {
+      const [name, setName]         = useState('');
+      const [email, setEmail]       = useState('');
       const [password, setPassword] = useState('');
+      const [showPwd, setShowPwd]   = useState(false);
+      const [pending, setPending]   = useState(false);
+      const [error, setError]       = useState(null);   // string | { message, code } | null
+
+      const emailValid    = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+      const passwordValid = password.length >= 8;
+      const formValid     = emailValid && passwordValid && !pending;
+
+      const handleSubmit = async () => {
+        if (!formValid) return;
+        setError(null);
+        setPending(true);
+        try {
+          if (!groundedAuth || !groundedAuth.signUpWithEmail) {
+            // Defensive: should never hit since signup route is auth-aware.
+            setError('Couldn’t create account. Try again?');
+            setPending(false);
+            return;
+          }
+          const r = await groundedAuth.signUpWithEmail(email.trim(), password, name.trim());
+          if (!r || !r.ok) {
+            const m = mapAuthError(r && r.code, 'signup');
+            if (m) setError(m);
+            console.warn('[C1] signUpWithEmail failed:', r && r.code);
+            setPending(false);
+            return;
+          }
+          // On success: A3+J1 listener fires → routes to 'values'. Component unmounts.
+          if (onSubmitted) onSubmitted();
+        } catch (e) {
+          console.error('[C1] signUpWithEmail threw:', e);
+          setError('Couldn’t create account. Try again?');
+          setPending(false);
+        }
+      };
+
+      // Banner shape handling: string vs object (with code for inline action).
+      const errorMessage     = error && (typeof error === 'string' ? error : error.message);
+      const errorIsEmailUsed = !!(error && typeof error === 'object' && error.code === 'auth/email-already-in-use');
+
       return (
         <div className="phone-frame fade-in">
           <div className="px-6 pt-6 pb-2"><BackArrow onClick={onBack} /></div>
           <div className="flex-1 overflow-y-auto no-scrollbar px-7 pb-4">
-            <h2 className="text-[28px] font-serif text-g-charcoal text-center mt-3 mb-3">Create your account</h2>
-            <p className="text-center text-g-charcoal text-sm leading-relaxed mb-6">
-              Sign up today and become part of<br/>Grounded's thriving community.
-            </p>
-            <div className="space-y-2.5">
-              <button onClick={() => onCreate({ email: 'google_user' })} className="social-btn">
-                <GoogleIcon /> Continue with Google</button>
-              <button onClick={() => onCreate({ email: 'apple_user' })} className="social-btn">
-                <AppleIcon /> Continue with Apple</button>
-              <button onClick={() => onCreate({ email: 'fb_user' })} className="social-btn">
-                <FacebookIcon /> Continue with Facebook</button>
-            </div>
-            <div className="flex items-center gap-3 my-5">
-              <div className="flex-1 h-px bg-g-line"></div>
-              <span className="text-g-gray text-sm">or</span>
-              <div className="flex-1 h-px bg-g-line"></div>
-            </div>
+            <h2 className="text-[28px] font-serif text-g-charcoal text-center mt-3 mb-2">Create your account</h2>
+            <p className="text-center text-g-gray text-sm mb-6">Sign up to start your Grounded journey.</p>
+
             <div className="space-y-3">
-              <input className="input-field" placeholder="Enter your email" type="email"
-                value={email} onChange={e=>setEmail(e.target.value)} />
-              <input className="input-field" placeholder="Create a password" type="password"
-                value={password} onChange={e=>setPassword(e.target.value)} />
+              <input
+                className="input-field"
+                type="text"
+                placeholder="What should we call you? (optional)"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                autoComplete="given-name"
+                disabled={pending}
+              />
+              <input
+                className="input-field"
+                type="email"
+                placeholder="Your email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                autoCapitalize="none"
+                autoComplete="email"
+                inputMode="email"
+                disabled={pending}
+              />
+              <div className="relative">
+                <input
+                  className="input-field pr-12"
+                  type={showPwd ? 'text' : 'password'}
+                  placeholder="8+ characters"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  autoComplete="new-password"
+                  disabled={pending}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPwd(!showPwd)}
+                  aria-label={showPwd ? 'Hide password' : 'Show password'}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-g-gray"
+                  tabIndex={-1}
+                >
+                  {showPwd ? (
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
+                      <line x1="1" y1="1" x2="23" y2="23" />
+                    </svg>
+                  ) : (
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                      <circle cx="12" cy="12" r="3" />
+                    </svg>
+                  )}
+                </button>
+              </div>
             </div>
+
+            {/* C1 ERROR BANNER — same look as B2; conditional inline link for email-in-use. */}
+            {error && (
+              <div
+                role="alert"
+                className="mt-4 px-4 py-3 rounded-2xl text-left text-[13px] leading-snug"
+                style={{ backgroundColor: '#FFF8F0', color: '#C97C7C' }}
+              >
+                {errorMessage}
+                {errorIsEmailUsed && (
+                  <>
+                    {' '}
+                    <button
+                      type="button"
+                      onClick={() => onSignInInstead && onSignInInstead(email.trim())}
+                      className="underline font-semibold"
+                      style={{ color: '#C97C7C' }}
+                    >
+                      Sign in instead?
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
+
             <div className="mt-6 flex justify-center">
-              <PillButton onClick={() => onCreate({ email })}>Create Account</PillButton>
+              <button
+                onClick={handleSubmit}
+                disabled={!formValid}
+                className="px-10 py-3.5 rounded-full bg-g-green text-white text-[15px] font-semibold transition-all active:scale-[0.98] active:bg-g-deep disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100 flex items-center gap-2.5"
+              >
+                {pending && (
+                  /* B2-style spinner — white arc on faded white track for sage-filled button. */
+                  <svg className="animate-spin" width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <circle cx="12" cy="12" r="10" stroke="rgba(255,255,255,0.35)" strokeWidth="3" />
+                    <path d="M12 2 a10 10 0 0 1 10 10" stroke="#FFFFFF" strokeWidth="3" strokeLinecap="round" />
+                  </svg>
+                )}
+                <span>Create account</span>
+              </button>
             </div>
-            <p className="text-center text-[11px] text-g-gray mt-4 px-2">
-              By signing up. I have read an agree to Grounded's<br/>
-              <span className="underline text-g-deep font-semibold">Terms</span> and{' '}
-              <span className="underline text-g-deep font-semibold">Privacy Policy</span>
+
+            <p className="text-center text-[11px] text-g-gray mt-4 px-2 leading-relaxed">
+              By signing up you agree to your data being stored securely.<br/>
+              Privacy policy coming soon.
             </p>
           </div>
           <div className="px-6 pb-6 text-center">
@@ -1013,49 +1160,206 @@
     };
 
     // ============================================================
-    // 4B. SIGN IN
+    // 4B. SIGN IN (V15/C2 — wired to groundedAuth.signInWithEmail)
     // ============================================================
-    const SignInScreen = ({ onSignIn, onSignUp, onBack }) => {
-      const [email, setEmail] = useState('');
+    // Strips V14's fake social buttons (Google now lives on Welcome; Apple/FB
+    // deferred per F2). prefillEmail seeds the email input when the user came
+    // here via C1's "Sign in instead?" link. Show-password toggle, B2-style
+    // spinner inside button + warm error banner. Inline forgot-password flow
+    // (sendPasswordReset) instead of a separate screen — C3 can replace later
+    // with a polished 2-step flow without breaking this.
+    // On 'auth/user-not-found' the banner gets an inline "Sign up?" link.
+    // On success: A3+J1 listener fires → resolver routes to home or values.
+    const SignInScreen = ({ groundedAuth, prefillEmail, onSubmitted, onSignUp, onBack }) => {
+      const [email, setEmail]       = useState(prefillEmail || '');
       const [password, setPassword] = useState('');
+      const [showPwd, setShowPwd]   = useState(false);
+      const [pending, setPending]   = useState(false);
+      const [error, setError]       = useState(null);   // string | { message, code } | null
+      const [resetState, setResetState] = useState('idle');  // 'idle' | 'sending' | 'sent'
+
+      const emailValid    = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+      // Sign-in: any non-empty password. Returning users may have legacy
+      // short passwords; Firebase rejects empty server-side anyway.
+      const passwordValid = password.length >= 1;
+      const formValid     = emailValid && passwordValid && !pending;
+
+      const handleSubmit = async () => {
+        if (!formValid) return;
+        setError(null);
+        setPending(true);
+        try {
+          if (!groundedAuth || !groundedAuth.signInWithEmail) {
+            setError('Couldn’t sign in. Try again?');
+            setPending(false);
+            return;
+          }
+          const r = await groundedAuth.signInWithEmail(email.trim(), password);
+          if (!r || !r.ok) {
+            const m = mapAuthError(r && r.code, 'signin');
+            if (m) setError(m);
+            console.warn('[C2] signInWithEmail failed:', r && r.code);
+            setPending(false);
+            return;
+          }
+          // On success: A3+J1 listener fires → routes to home/values. Component unmounts.
+          if (onSubmitted) onSubmitted();
+        } catch (e) {
+          console.error('[C2] signInWithEmail threw:', e);
+          setError('Couldn’t sign in. Try again?');
+          setPending(false);
+        }
+      };
+
+      const handleForgot = async () => {
+        if (!emailValid) {
+          setError('Type your email above first, then tap Forgot password.');
+          return;
+        }
+        setError(null);
+        setResetState('sending');
+        try {
+          if (!groundedAuth || !groundedAuth.sendPasswordReset) {
+            setResetState('idle');
+            setError('Couldn’t send reset link. Try again?');
+            return;
+          }
+          const r = await groundedAuth.sendPasswordReset(email.trim());
+          if (r && r.ok) {
+            setResetState('sent');
+          } else {
+            const m = mapAuthError(r && r.code, 'signin');
+            if (m) setError(typeof m === 'string' ? m : m.message);
+            console.warn('[C2] sendPasswordReset failed:', r && r.code);
+            setResetState('idle');
+          }
+        } catch (e) {
+          console.error('[C2] sendPasswordReset threw:', e);
+          setError('Couldn’t send reset link. Try again?');
+          setResetState('idle');
+        }
+      };
+
+      // Banner shape handling: string vs object (with code for inline action).
+      const errorMessage     = error && (typeof error === 'string' ? error : error.message);
+      const errorIsNoAccount = !!(error && typeof error === 'object' && error.code === 'auth/user-not-found');
+
       return (
         <div className="phone-frame fade-in">
           <div className="px-6 pt-6 pb-2"><BackArrow onClick={onBack} /></div>
           <div className="flex-1 overflow-y-auto no-scrollbar px-7 pb-4">
-            <h2 className="text-[28px] font-serif text-g-charcoal text-center mt-3 mb-3">Sign in to continue</h2>
-            <p className="text-center text-g-charcoal text-sm leading-relaxed mb-6">
-              Sign in and become part of Grounded's<br/>thriving community.
-            </p>
-            <div className="space-y-2.5">
-              <button onClick={() => onSignIn({ email: 'google_user' })} className="social-btn">
-                <GoogleIcon /> Continue with Google</button>
-              <button onClick={() => onSignIn({ email: 'apple_user' })} className="social-btn">
-                <AppleIcon /> Continue with Apple</button>
-              <button onClick={() => onSignIn({ email: 'fb_user' })} className="social-btn">
-                <FacebookIcon /> Continue with Facebook</button>
-            </div>
-            <div className="flex items-center gap-3 my-5">
-              <div className="flex-1 h-px bg-g-line"></div>
-              <span className="text-g-gray text-sm">or</span>
-              <div className="flex-1 h-px bg-g-line"></div>
-            </div>
+            <h2 className="text-[28px] font-serif text-g-charcoal text-center mt-3 mb-2">Welcome back</h2>
+            <p className="text-center text-g-gray text-sm mb-6">Sign in to your Grounded account.</p>
+
             <div className="space-y-3">
-              <input className="input-field" placeholder="Enter your email" type="email"
-                value={email} onChange={e=>setEmail(e.target.value)} />
-              <input className="input-field" placeholder="Create a password" type="password"
-                value={password} onChange={e=>setPassword(e.target.value)} />
+              <input
+                className="input-field"
+                type="email"
+                placeholder="Your email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                autoCapitalize="none"
+                autoComplete="email"
+                inputMode="email"
+                disabled={pending}
+              />
+              <div className="relative">
+                <input
+                  className="input-field pr-12"
+                  type={showPwd ? 'text' : 'password'}
+                  placeholder="Your password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  autoComplete="current-password"
+                  disabled={pending}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPwd(!showPwd)}
+                  aria-label={showPwd ? 'Hide password' : 'Show password'}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-g-gray"
+                  tabIndex={-1}
+                >
+                  {showPwd ? (
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
+                      <line x1="1" y1="1" x2="23" y2="23" />
+                    </svg>
+                  ) : (
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                      <circle cx="12" cy="12" r="3" />
+                    </svg>
+                  )}
+                </button>
+              </div>
             </div>
+
+            {/* C2 ERROR BANNER — same look as B2/C1; conditional inline link for user-not-found. */}
+            {error && (
+              <div
+                role="alert"
+                className="mt-4 px-4 py-3 rounded-2xl text-left text-[13px] leading-snug"
+                style={{ backgroundColor: '#FFF8F0', color: '#C97C7C' }}
+              >
+                {errorMessage}
+                {errorIsNoAccount && (
+                  <>
+                    {' '}
+                    <button
+                      type="button"
+                      onClick={() => onSignUp && onSignUp()}
+                      className="underline font-semibold"
+                      style={{ color: '#C97C7C' }}
+                    >
+                      Sign up?
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
+
             <div className="mt-6 flex justify-center">
-              <PillButton onClick={() => onSignIn({ email })}>Sign in</PillButton>
+              <button
+                onClick={handleSubmit}
+                disabled={!formValid}
+                className="px-10 py-3.5 rounded-full bg-g-green text-white text-[15px] font-semibold transition-all active:scale-[0.98] active:bg-g-deep disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100 flex items-center gap-2.5"
+              >
+                {pending && (
+                  <svg className="animate-spin" width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <circle cx="12" cy="12" r="10" stroke="rgba(255,255,255,0.35)" strokeWidth="3" />
+                    <path d="M12 2 a10 10 0 0 1 10 10" stroke="#FFFFFF" strokeWidth="3" strokeLinecap="round" />
+                  </svg>
+                )}
+                <span>Sign in</span>
+              </button>
             </div>
-            <div className="flex justify-center gap-6 mt-5">
-              <span className="text-sm text-g-deep underline font-semibold cursor-pointer">Find you account</span>
-              <span className="text-sm text-g-deep underline font-semibold cursor-pointer">Forgot password?</span>
+
+            {/* C2 INLINE FORGOT-PASSWORD — three-state: idle (link) / sending / sent. */}
+            <div className="mt-5 flex justify-center text-center min-h-[24px]">
+              {resetState === 'idle' && (
+                <button
+                  type="button"
+                  onClick={handleForgot}
+                  className="text-g-deep text-sm underline font-semibold"
+                >
+                  Forgot password?
+                </button>
+              )}
+              {resetState === 'sending' && (
+                <p className="text-g-gray text-sm italic">Sending reset link…</p>
+              )}
+              {resetState === 'sent' && (
+                <p className="text-g-deep text-sm italic px-4 leading-snug">
+                  Reset link sent to {email.trim()}. Check your inbox.
+                </p>
+              )}
             </div>
           </div>
           <div className="px-6 pb-6 text-center">
             <p className="text-sm text-g-gray">
-              <button onClick={onSignUp} className="text-g-deep font-semibold underline">Sign up</button>{' '}for a new account
+              Don’t have an account?{' '}
+              <button onClick={onSignUp} className="text-g-deep font-semibold underline">Sign up</button>
             </p>
           </div>
         </div>
@@ -2598,7 +2902,12 @@
     // ============================================================
     // 16. SETTINGS
     // ============================================================
+    // V15/E8: Settings → Log out opens an in-screen confirm modal (not native
+    // window.confirm) so the brand frame stays intact for this small but
+    // emotional moment. On confirm: onLogout fires async groundedAuth.signOut(),
+    // A3 listener catches → J1 routes to welcome.
     const SettingsScreen = ({ onHome, onNav, onPremium, onSupport, onLogout, onAccount, onNotif, onLanguage, onExport, onPrivacy }) => {
+      const [showConfirm, setShowConfirm] = useState(false);
       const items = [
         { label:'Account', action: onAccount },
         { label:'Notifications & reminders', action: onNotif },
@@ -2622,13 +2931,54 @@
                 </button>
               ))}
             </div>
-            <button onClick={onLogout}
+            <button onClick={() => setShowConfirm(true)}
               className="card-outline w-full px-4 py-4 flex items-center justify-start mt-5">
               <span className="text-g-charcoal text-[15px] font-semibold">Log out</span>
             </button>
             <div className="h-16"/>
           </div>
           <BottomNav active="settings" onNav={onNav} />
+
+          {/* E8: in-screen sign-out confirmation modal.
+              Confined to the phone-frame (absolute inset-0) so the brand
+              frame stays intact. Backdrop tap = Cancel. Sign out is sage
+              primary because non-destructive (data preserved in account);
+              compare with future E7 which would use red for destructive. */}
+          {showConfirm && (
+            <div
+              className="absolute inset-0 z-50 flex items-center justify-center px-6 fade-in"
+              style={{ backgroundColor: 'rgba(61, 94, 76, 0.6)' }}
+              onClick={() => setShowConfirm(false)}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="signout-title"
+            >
+              <div
+                className="bg-white rounded-2xl p-7 w-full text-center"
+                style={{ maxWidth: '320px' }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <h3 id="signout-title" className="font-serif text-[22px] text-g-green mb-3">Sign out?</h3>
+                <p className="text-g-charcoal text-sm leading-relaxed mb-6">
+                  Your data is safely in your account.<br/>Sign back in any time.
+                </p>
+                <div className="flex justify-center gap-3">
+                  <button
+                    onClick={() => setShowConfirm(false)}
+                    className="px-6 py-2.5 rounded-full bg-white border border-g-line text-g-deep text-[14px] font-semibold transition-all active:scale-[0.98] active:bg-g-sage"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={() => { setShowConfirm(false); onLogout(); }}
+                    className="px-6 py-2.5 rounded-full bg-g-green text-white text-[14px] font-semibold transition-all active:scale-[0.98] active:bg-g-deep"
+                  >
+                    Sign out
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       );
     };
@@ -3654,6 +4004,11 @@
       // V15/J1: flips true on first onAuthChange fire (or 400ms backstop) — gates the splash.
       const [authResolved, setAuthResolved] = useState(false);
 
+      // V15/C1: ephemeral session-only state. C1 (sign-up screen) writes here
+      // when user taps "Sign in instead?" on the email-already-in-use banner;
+      // C2 (sign-in screen) reads it as the initial value of its email input.
+      const [signInPrefill, setSignInPrefill] = useState('');
+
       // V15/J1: pure resolver — picks the right screen given current auth + data.
       // Uses fine-grained resume so users don't lose mid-onboarding progress.
       // Anonymous + no topValues → 'welcome'. The Welcome screen's "Continue
@@ -4009,14 +4364,18 @@
           view = <PromiseScreen onContinue={() => go('signup')} onBack={() => go('in_right_place')} />; break;
         case 'signup':
           view = <SignUpScreen
-            onCreate={(u) => { updateData({ user: u }); go('values'); }}
+            groundedAuth={groundedApi && groundedApi.groundedAuth}
+            onSubmitted={() => { /* A3+J1 listener handles routing on success */ }}
             onSignIn={() => go('signin')}
-            onBack={() => go('promise')}
+            onSignInInstead={(email) => { setSignInPrefill(email); go('signin'); }}
+            onBack={() => go('welcome')}
           />; break;
         case 'signin':
           view = <SignInScreen
-            onSignIn={(u) => { updateData({ user: u }); go('home'); }}
-            onSignUp={() => go('welcome')}
+            groundedAuth={groundedApi && groundedApi.groundedAuth}
+            prefillEmail={signInPrefill}
+            onSubmitted={() => { setSignInPrefill(''); /* A3+J1 listener handles routing */ }}
+            onSignUp={() => go('signup')}
             onBack={() => go('welcome')}
           />; break;
         case 'values':
@@ -4213,7 +4572,26 @@
             onLanguage={() => go('language')}
             onExport={() => go('export_data')}
             onPrivacy={() => go('privacy')}
-            onLogout={() => { localStorage.removeItem(LS_KEY); setData({}); go('welcome'); }}
+            onLogout={async () => {
+              // V15/E8: async sign-out. The auth listener (A3) catches the
+              // sign-out event and the resolver (J1) routes back to welcome.
+              // No manual navigation here — keeps state transitions centralized.
+              if (groundedApi && groundedApi.groundedAuth) {
+                try {
+                  await groundedApi.groundedAuth.signOut();
+                } catch (e) {
+                  // Silent per project decision; backlog ticket for v1.0.x polish.
+                  // Listener won't fire on failure, so user stays on Settings —
+                  // no broken state, just a quietly failed retry path.
+                  console.warn('[E8] signOut failed:', e);
+                }
+              } else {
+                // Fallback: firebase.js not loaded (localStorage-only mode).
+                // Mirror V14 behavior — clear in-memory + route to welcome.
+                setData({});
+                go('welcome');
+              }
+            }}
           />; break;
         case 'premium':
           // Done = save → Settings (when entered from Settings).
