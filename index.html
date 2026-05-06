@@ -4059,6 +4059,12 @@
       // detection logic lives in the A3 listener below.
       const [migrating, setMigrating] = useState(false);
 
+      // V15/Bug6: defers routing on sign-in until Firestore data hydrates.
+      // firebase.js's onAuthStateChanged fires notifyAuth BEFORE the first
+      // onSnapshot push, so getDataNow() at the auth event is stale. Without
+      // this gate, returning users would get routed to 'values' picker.
+      const [awaitingHydration, setAwaitingHydration] = useState(false);
+
       // V15/J1: pure resolver — picks the right screen given current auth + data.
       // Uses fine-grained resume so users don't lose mid-onboarding progress.
       // Anonymous + no topValues → 'welcome'. The Welcome screen's "Continue
@@ -4154,23 +4160,19 @@
         const unsubscribe = groundedApi.groundedAuth.onAuthChange((user) => {
           const wasInitial = isInitialFire;
           isInitialFire = false;
-          setAuthResolved(true);
 
-          // J1: read live data from firebase.js (closure `data` may be stale —
-          // currentDocData is the freshest source). For signed-in returning
-          // users this may be {} on the first fire if the Firestore snapshot
-          // hasn't arrived yet; resolver will route to 'values' (onboarding),
-          // then snapshot arrives and the user sees their values prefilled.
-          // Acceptable trade-off — confirmed during scoping.
+          // J1: read live data from firebase.js. For signed-in users, this is
+          // STALE on the first fire (currentDocData reflects pre-signin state
+          // because firebase.js doesn't refresh it between notifyAuth and the
+          // first onSnapshot push). Bug 6 fix: defer routing for signed-in
+          // users until the hydration effect below sees fresh data.
           const liveData = (groundedApi.groundedSync && groundedApi.groundedSync.getDataNow)
             ? groundedApi.groundedSync.getDataNow()
             : data;
           const next = resolveInitialScreen({ user, data: liveData });
 
-          // V15/C5: detect migration moment. firebase.js's auto-migration in
-          // onAuthStateChanged runs BEFORE notifyAuth fires here, but it does
-          // not reset currentDocData — so liveData at this moment is still the
-          // pre-migration anonymous data. If it has any keys (matches firebase.js
+          // V15/C5: detect migration moment using the same stale-currentDocData
+          // window. If pre-migration data has any keys (matches firebase.js
           // line 241 hasLocal threshold), migration just happened: show overlay.
           // Backend ticket for v1.0.x: expose `lastMigrationResult` for cleaner
           // signaling instead of inferring from data shape.
@@ -4182,21 +4184,27 @@
           }
 
           if (user) {
-            // Signed in (sign-up, sign-in, or returning user). Route per resolver.
-            setScreen(next);
+            // V15/Bug6: defer routing until Firestore data hydrates. The
+            // hydration effect below catches the first onSnapshot push and
+            // runs the resolver with fresh data. authResolved also flips
+            // there — keeping the splash visible avoids a 'welcome' flash.
+            setAwaitingHydration(true);
+            // Do NOT setScreen or setAuthResolved here for the user case.
           } else if (!wasInitial) {
-            // True sign-out (was signed in, now isn't). Triggers:
-            //   - user-initiated via Settings → Log out (E8, once wired)
-            //   - involuntary: token expiry, server-side session revoke
-            // Resolver returns 'welcome' here in normal cases (no user + no
-            // local topValues since migration cleared localStorage on sign-in).
-            // Using resolver instead of hardcoded 'welcome' for consistency
-            // and future-proofing against state-shape changes.
+            // True sign-out (user-initiated via Settings, or involuntary like
+            // token expiry / server revoke). Route immediately — resolver
+            // returns 'welcome' since no user + localStorage cleared by
+            // earlier migration. Defensive clear of awaitingHydration in case
+            // sign-out fires while a prior sign-in was still hydrating.
+            setAwaitingHydration(false);
+            setAuthResolved(true);
             setScreen(next);
           } else {
-            // Initial fire with no user = anonymous mode. Route per resolver:
+            // Initial fire with no user = anonymous mode. Route immediately:
             //   - no topValues → 'welcome' (matches default useState, no-op)
             //   - has topValues in localStorage → 'home' (returning anon user)
+            setAwaitingHydration(false);
+            setAuthResolved(true);
             setScreen(next);
           }
         });
@@ -4206,6 +4214,44 @@
           if (typeof unsubscribe === 'function') unsubscribe();
         };
       }, [bootState, groundedApi]);
+
+      // V15/Bug6: hydration watcher — runs the resolver once Firestore data
+      // arrives after a sign-in event. Only signed-in users set awaitingHydration
+      // so this effect is a no-op during normal app use or in anonymous mode.
+      // Even fresh signups satisfy hasContent (firebase.js writes a 5-key
+      // system doc on Case C), so this resolves cleanly for all sign-in paths.
+      useEffect(() => {
+        if (!awaitingHydration) return;
+        const liveData = (groundedApi && groundedApi.groundedSync && groundedApi.groundedSync.getDataNow)
+          ? groundedApi.groundedSync.getDataNow()
+          : data;
+        const hasContent = liveData && Object.keys(liveData).length > 0;
+        if (!hasContent) return;  // wait for next data push
+
+        const user = groundedApi && groundedApi.groundedAuth && groundedApi.groundedAuth.currentUser;
+        const next = resolveInitialScreen({ user, data: liveData });
+        setScreen(next);
+        setAwaitingHydration(false);
+        setAuthResolved(true);
+      }, [data, awaitingHydration]);
+
+      // V15/Bug6: hydration backstop — don't trap user behind splash forever.
+      // Fires if data never hydrates (Firestore rules denial, network failure,
+      // misconfigured firebase.js). Resolves with whatever data we have.
+      useEffect(() => {
+        if (!awaitingHydration) return;
+        const t = setTimeout(() => {
+          const liveData = (groundedApi && groundedApi.groundedSync && groundedApi.groundedSync.getDataNow)
+            ? groundedApi.groundedSync.getDataNow()
+            : data;
+          const user = groundedApi && groundedApi.groundedAuth && groundedApi.groundedAuth.currentUser;
+          const next = resolveInitialScreen({ user, data: liveData });
+          setScreen(next);
+          setAwaitingHydration(false);
+          setAuthResolved(true);
+        }, 1500);
+        return () => clearTimeout(t);
+      }, [awaitingHydration]);
 
       // Daily Reflection — pick fresh question on:
       //   1) first load (no dailyQuestion yet)
@@ -4394,11 +4440,19 @@
       };
       const [pendingTriage, setPendingTriage] = useState(null);
 
+      // V15/Bug6 + C5: rendering precedence
+      //   1. migrating  → MigrationOverlay  (C5: anon→signed-in transition takes priority)
+      //   2. booting OR awaiting hydration → BootSplash
+      //   3. otherwise  → routed view (below)
+      // The migration early-return is a small UX win over C5's original layered
+      // approach: destination screen never renders behind the overlay, so there's
+      // no flicker when overlay fades.
+      if (migrating) return <MigrationOverlay />;
       // V15: boot splash gates render until firebase.js resolves (or 2.5s timeout fires).
-      // V15/J1: when firebase.js IS available, also hold splash until the auth
-      // listener has reported in (capped by its 400ms backstop). This eliminates
-      // the welcome-screen flash for returning signed-in users.
-      if (bootState === 'booting' || (groundedApi && !authResolved)) return <BootSplash />;
+      // V15/J1: hold splash until the auth listener has reported in (400ms backstop).
+      // V15/Bug6: also hold splash through awaitingHydration so signed-in returning
+      // users (and mid-app sign-ins) don't briefly flash 'welcome' before routing.
+      if (bootState === 'booting' || (groundedApi && !authResolved) || awaitingHydration) return <BootSplash />;
 
       let view = null;
       switch (screen) {
@@ -4776,7 +4830,8 @@
       return (
         <div className="stage">
           {view}
-          {migrating && <MigrationOverlay />}
+          {/* V15/Bug6: MigrationOverlay moved to early-return precedence above
+              (replaces the old layered render that sat on top of {view}). */}
           {showDev && (
             <div className="fixed bottom-2 right-2 bg-white/95 backdrop-blur rounded-xl shadow-lg p-2 text-[10px] text-g-gray border border-gray-100 z-50" style={{maxWidth: 240}}>
               <div className="flex items-center justify-between mb-1">
