@@ -1691,14 +1691,11 @@
         <div className="phone-frame fade-in">
           <div className="px-6 pt-6 pb-2 flex items-center justify-between">
             <BackArrow onClick={onHome} label="Home" />
-            {/* V16/Bug10: top-right slot — "Save" button when editable, "✓ Sent" when locked. */}
+            {/* V16/Bug10 + V17/Bug11: top-right slot — Save (with "Saved ✓" feedback)
+                when editable, "✓ Sent" when locked. */}
             {isLocked
               ? <span className="text-g-green text-sm font-semibold">✓ Sent</span>
-              : <button onClick={() => onSaveDraft(prompt, text, valueLink)}
-                        disabled={!text.trim()}
-                        className={text.trim() ? 'text-g-deep text-base font-semibold' : 'text-g-gray text-base'}>
-                  Save
-                </button>}
+              : <SaveDraftButton canSave={!!text.trim()} onSave={() => onSaveDraft(prompt, text, valueLink)} />}
           </div>
           <div className="flex-1 overflow-y-auto no-scrollbar px-6">
             <h2 className="font-serif text-[24px] text-g-charcoal mt-2 mb-4">Today's Reflection</h2>
@@ -1752,8 +1749,12 @@
       const year = now.getFullYear();
       const month = now.getMonth();
       const dayKey = (d) => `${year}-${String(month+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
-      const hasDot = (d) => !!reflections[dayKey(d)];
-      const sel = selected != null ? reflections[dayKey(selected)] : null;
+      // V17/Bug11 (calendar filter): drafts (submitted=false) hidden from history.
+      // Legacy entries (no submitted field) treated as submitted (V15 default).
+      const isSubmitted = (e) => !!e && e.submitted !== false;
+      const hasDot = (d) => isSubmitted(reflections[dayKey(d)]);
+      const rawSel = selected != null ? reflections[dayKey(selected)] : null;
+      const sel = isSubmitted(rawSel) ? rawSel : null;
       return (
         <div className="phone-frame fade-in">
           <div className="px-6 pt-6 pb-2 flex items-center justify-between">
@@ -1812,14 +1813,11 @@
         <div className="phone-frame fade-in">
           <div className="px-6 pt-6 pb-2 flex items-center justify-between">
             <BackArrow onClick={onHome} label="Home" />
-            {/* V16/Bug10: top-right slot — "Save" when editable, "✓ Sent" when locked. */}
+            {/* V16/Bug10 + V17/Bug11: top-right slot — Save (with "Saved ✓" feedback)
+                when editable, "✓ Sent" when locked. */}
             {isLocked
               ? <span className="text-g-green text-sm font-semibold">✓ Sent</span>
-              : <button onClick={() => onSaveDraft(text)}
-                        disabled={!text.trim()}
-                        className={text.trim() ? 'text-g-deep text-base font-semibold' : 'text-g-gray text-base'}>
-                  Save
-                </button>}
+              : <SaveDraftButton canSave={!!text.trim()} onSave={() => onSaveDraft(text)} />}
           </div>
           <div className="flex-1 overflow-y-auto no-scrollbar px-6">
             <h2 className="font-serif text-[24px] text-g-charcoal mt-2 mb-4">Free Write ✏️</h2>
@@ -1860,15 +1858,19 @@
       const year = now.getFullYear();
       const month = now.getMonth();
       const dayKey = (d) => `${year}-${String(month+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
-      // V16/Bug10: backward-compat — entries may be string (V15) or { text, submitted } (V16).
-      // Helper extracts the text regardless of shape. Calendar dot shows for any entry
-      // (drafts + submitted) per spec.
+      // V16/Bug10: entries may be string (V15) or { text, submitted } (V16).
+      // V17/Bug11 (calendar filter): drafts hidden from history.
+      // Legacy strings treated as submitted (V15 default — save was instant lock).
+      const isSubmitted = (raw) => typeof raw === 'string' ? !!raw : (!!raw && raw.submitted !== false);
       const entryText = (raw) => typeof raw === 'string' ? raw : (raw && raw.text) || '';
       const hasDot = (d) => {
-        const t = entryText(writes[dayKey(d)]);
+        const raw = writes[dayKey(d)];
+        if (!isSubmitted(raw)) return false;
+        const t = entryText(raw);
         return !!t && t.trim().length > 0;
       };
-      const sel = selected != null ? entryText(writes[dayKey(selected)]) : null;
+      const rawSel = selected != null ? writes[dayKey(selected)] : null;
+      const sel = isSubmitted(rawSel) ? entryText(rawSel) : null;
       return (
         <div className="phone-frame fade-in">
           <div className="px-6 pt-6 pb-2 flex items-center justify-between">
@@ -2895,14 +2897,11 @@
             <h3 className="font-serif text-[20px] text-g-charcoal flex items-center gap-2">
               <span>{exercise.emoji}</span> {exercise.title}
             </h3>
-            {/* V16/Bug10: top-right slot — "Save" button when editable, "✓ Sent" when locked. */}
+            {/* V16/Bug10 + V17/Bug11: top-right slot — Save (with "Saved ✓" feedback)
+                when editable, "✓ Sent" when locked. */}
             {isLocked
               ? <span className="text-g-green text-sm font-semibold">✓ Sent</span>
-              : <button onClick={() => onSaveDraft(items.filter(i => i.trim()))}
-                        disabled={!canSave}
-                        className={canSave ? 'text-g-deep text-base font-semibold' : 'text-g-gray text-base'}>
-                  Save
-                </button>}
+              : <SaveDraftButton canSave={canSave} onSave={() => onSaveDraft(items.filter(i => i.trim()))} />}
           </div>
           <div className="flex-1 overflow-y-auto no-scrollbar px-6">
             <p className="text-g-charcoal text-sm mt-1">{dateLabel}</p>
@@ -2974,9 +2973,17 @@
       const month = now.getMonth();
       const dayKey = (d) => `${year}-${String(month+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
       // V16/Bug10: each completed[day][exerciseId] may be Array<string> (V15) or
-      // { items, submitted } (V16). Calendar dot shows for any non-empty entry.
+      // { items, submitted } (V16).
+      // V17/Bug11 (calendar filter): drafts hidden — only submitted exercises
+      // count toward the dot or get rendered. Legacy arrays treated as submitted.
+      const isSubmitted = (raw) => Array.isArray(raw) ? !!raw.length : (!!raw && raw.submitted !== false);
       const entryItems = (raw) => Array.isArray(raw) ? raw : (raw && raw.items) || [];
-      const hasDot = (d) => completed[dayKey(d)] && Object.keys(completed[dayKey(d)]).length > 0;
+      const hasDot = (d) => {
+        const dayEntries = completed[dayKey(d)];
+        if (!dayEntries) return false;
+        // At least one exercise on this day must be submitted (drafts don't count).
+        return Object.values(dayEntries).some(isSubmitted);
+      };
       const selectedData = selected != null ? (completed[dayKey(selected)] || null) : null;
       return (
         <div className="phone-frame fade-in">
@@ -3000,6 +3007,8 @@
                   const entry = selectedData[eid];
                   // V16/Bug10: backward compat — entry may be Array<string> (V15)
                   // or { items, submitted } (V16). entryItems() normalizes either shape.
+                  // V17/Bug11 (calendar filter): skip drafts from the entry list.
+                  if (!isSubmitted(entry)) return null;
                   const lines = entryItems(entry);
                   return (
                     <div key={eid} className="mb-3">
@@ -4235,6 +4244,33 @@
     );
 
     // ============================================================
+    // V17/Bug11 SAVE-DRAFT BUTTON — top-right Save button used by
+    // ReflectionScreen, FreeWriteScreen, ExerciseEntry. Persists draft
+    // without navigating, then briefly flips text "Save" → "Saved ✓"
+    // for 1.5s as visual feedback. After timeout, reverts to "Save"
+    // (user can re-tap to re-save same content; idempotent).
+    // ============================================================
+    const SaveDraftButton = ({ canSave, onSave }) => {
+      const [justSaved, setJustSaved] = useState(false);
+      const handleClick = () => {
+        if (!canSave) return;
+        onSave();
+        setJustSaved(true);
+        setTimeout(() => setJustSaved(false), 1500);
+      };
+      const cls = justSaved
+        ? 'text-g-green text-base font-semibold'
+        : canSave
+          ? 'text-g-deep text-base font-semibold'
+          : 'text-g-gray text-base';
+      return (
+        <button onClick={handleClick} disabled={!canSave} className={cls}>
+          {justSaved ? 'Saved ✓' : 'Save'}
+        </button>
+      );
+    };
+
+    // ============================================================
     // V16/Bug10 SHARED MODAL — confirm-send for daily exercise screens.
     // Reused by ReflectionScreen, FreeWriteScreen, ExerciseEntry. Heading
     // varies per screen (passed as prop); body + buttons identical across.
@@ -4886,7 +4922,7 @@
         case 'reflection':
           // V16/Bug10: two callbacks — onSaveDraft (resumable) + onSubmit (locked + go home).
           view = <ReflectionScreen data={data}
-            onSaveDraft={(q, a, vk) => { saveReflection(q, a, vk, false); go('home'); }}
+            onSaveDraft={(q, a, vk) => { saveReflection(q, a, vk, false); /* V17/Bug11: no navigate — user stays to keep typing */ }}
             onSubmit={(q, a, vk) => { saveReflection(q, a, vk, true); go('home'); }}
             onSkip={() => go('home')}
             onHome={() => go('home')}
@@ -4897,7 +4933,7 @@
         case 'freewrite':
           // V16/Bug10: same two-callback pattern.
           view = <FreeWriteScreen data={data}
-            onSaveDraft={(t) => { saveFreeWrite(t, false); go('home'); }}
+            onSaveDraft={(t) => { saveFreeWrite(t, false); /* V17/Bug11: no navigate — user stays to keep typing */ }}
             onSubmit={(t) => { saveFreeWrite(t, true); go('home'); }}
             onHome={() => go('home')}
             onHistory={() => go('freewrite_calendar')} />; break;
@@ -5004,7 +5040,7 @@
           view = <ExerciseEntry
             exercise={ex}
             existing={existing}
-            onSaveDraft={(items) => { saveExerciseEntry(ex.id, items, false); go('my_practice'); }}
+            onSaveDraft={(items) => { saveExerciseEntry(ex.id, items, false); /* V17/Bug11: no navigate — user stays to keep typing */ }}
             onSubmit={(items) => { saveExerciseEntry(ex.id, items, true); go('after_save'); }}
             onBack={() => go('my_practice')} />;
           break;
