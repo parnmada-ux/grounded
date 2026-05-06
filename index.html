@@ -209,6 +209,11 @@
     // Restore: flip false → true. Google block stays untouched.
     const SOCIAL_PROVIDERS = { google: true, apple: false, facebook: false };
 
+    // V15/Bug3: feature flag for Account fields. Mobile hidden until Firebase
+    // Phone Auth lands (separate ticket post-20-user testing). UI + draft logic
+    // preserved — flipping to true re-exposes the field with no code changes.
+    const ACCOUNT_FIELDS = { mobile: false };
+
     const LS_KEY = 'grounded_v1';
     const loadData = () => {
       try { const raw = localStorage.getItem(LS_KEY); return raw ? JSON.parse(raw) : {}; }
@@ -3314,18 +3319,24 @@
               <p className="text-g-gray text-[12px] italic mt-1">You can change again in 14 days.</p>
             </div>
 
-            {/* Mobile — read-only, tap to change */}
-            <div className="mb-3">
-              <p className="text-g-gray text-[13px] mb-1">Mobile</p>
-              <button onClick={onChangeMobile}
-                      className="input-field flex items-center justify-between text-left">
-                <span className={mobile ? '' : 'italic'}
-                      style={mobile ? null : {color:'#B0B6B2'}}>
-                  {mobile || 'Add your mobile'}
-                </span>
-                <span className="text-g-gray">→</span>
-              </button>
-            </div>
+            {/* Mobile — read-only, tap to change.
+                V15/Bug3: hidden via ACCOUNT_FIELDS.mobile flag until Phone Auth
+                lands. Draft still carries mobile field (Bug 4 logic untouched).
+                ChangeMobileScreen route stays alive (defensive — dev panel /
+                deep links still work if anyone navigates there). */}
+            {ACCOUNT_FIELDS.mobile && (
+              <div className="mb-3">
+                <p className="text-g-gray text-[13px] mb-1">Mobile</p>
+                <button onClick={onChangeMobile}
+                        className="input-field flex items-center justify-between text-left">
+                  <span className={mobile ? '' : 'italic'}
+                        style={mobile ? null : {color:'#B0B6B2'}}>
+                    {mobile || 'Add your mobile'}
+                  </span>
+                  <span className="text-g-gray">→</span>
+                </button>
+              </div>
+            )}
 
             {/* Birthday — custom Day/Month/Year picker (no "Today" button), locks after first save */}
             <div className="mb-3">
