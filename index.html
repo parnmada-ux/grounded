@@ -204,6 +204,11 @@
     // ============================================================
     // STORAGE
     // ============================================================
+    // V15/Bug2: feature flag for social sign-in providers. Apple + Facebook
+    // hidden until we commit to a real timeline; UI work preserved for v2.
+    // Restore: flip false → true. Google block stays untouched.
+    const SOCIAL_PROVIDERS = { google: true, apple: false, facebook: false };
+
     const LS_KEY = 'grounded_v1';
     const loadData = () => {
       try { const raw = localStorage.getItem(LS_KEY); return raw ? JSON.parse(raw) : {}; }
@@ -3198,18 +3203,29 @@
       );
     };
 
-    const AccountScreen = ({ data, onBack, onHome, onSave, onManagePlan, onChangeEmail, onChangeMobile, onChangePassword, onDeleteAccount }) => {
-      const [name, setName]   = useState((data.user && data.user.displayName) || '');
-      const email             = (data.user && data.user.email)    || '';
-      const mobile            = (data.user && data.user.mobile)   || '';
-      const [username, setUsername] = useState((data.user && data.user.username) || '');
-      const [bday, setBday]   = useState((data.user && data.user.birthday) || '');
-      const bdayLocked        = !!(data.user && data.user.birthdaySet);
+    // V15/Bug4: AccountScreen now reads form values from `draft` (App-level
+    // accountDraft state) instead of holding local useState. Sub-screen
+    // navigation (Change email/mobile/password) no longer wipes typed values.
+    // Profile pic sheet + delete modal stay local — transient UI, no nav survival.
+    const AccountScreen = ({ draft, onUpdateDraft, onCommit, onExit, onManagePlan, onChangeEmail, onChangeMobile, onChangePassword, onDeleteAccount }) => {
+      // Defensive read: draft should never be null while this screen is mounted
+      // (enterAccount initializes it before navigating here), but if it is,
+      // fall back to empty strings so the screen doesn't crash.
+      const d = draft || {};
+      const name             = d.displayName      || '';
+      const email            = d.email            || '';
+      const username         = d.username         || '';
+      const mobile           = d.mobile           || '';
+      const bday             = d.birthday         || '';
+      const bdayLocked       = !!d.birthdaySet;
+      const originalUsername = d.originalUsername || '';
       const [showPicSheet, setShowPicSheet] = useState(false);
       const [showDelete, setShowDelete] = useState(false);
+      // V15/Bug5: birthday confirmation modal — fires when birthday transitions
+      // from unset → set on the Done press. Modal commits with birthdaySet=true.
+      const [showBdayConfirm, setShowBdayConfirm] = useState(false);
 
-      // Username availability — mock check
-      const originalUsername = (data.user && data.user.username) || '';
+      // Username availability — mock check (E4 will replace with real backend call).
       const usernameTaken = !!username && TAKEN_USERNAMES.includes(username.toLowerCase()) && username !== originalUsername;
       const usernameValid = username.length >= 3 && !usernameTaken;
 
@@ -3222,19 +3238,25 @@
 
       const handleDone = () => {
         if (usernameTaken) return; // block save if invalid
-        onSave({
-          displayName: name,
-          username,
-          birthday: bday,
-          // Lock birthday once a value has been saved
-          birthdaySet: !!bday || !!(data.user && data.user.birthdaySet),
-        });
+        // V15/Bug5: if birthday is transitioning from unset → set on this Done
+        // press, show confirmation modal first (lock is permanent).
+        // Detect: !bdayLocked = wasn't already locked when entering Account;
+        //         !!bday    = a birthday is now in the draft.
+        // Combined = first save of birthday → modal needed.
+        const bdayJustSet = !bdayLocked && !!bday;
+        if (bdayJustSet) {
+          setShowBdayConfirm(true);
+          return;  // modal's Save button will commit with birthdaySet=true
+        }
+        // No new birthday: commit directly (no lock change).
+        const birthdaySet = !!bday || bdayLocked;
+        onCommit({ ...d, birthdaySet });
       };
 
       return (
         <div className="phone-frame fade-in">
           <div className="px-6 pt-6 pb-2 flex items-center justify-between">
-            <BackArrow onClick={onBack} />
+            <BackArrow onClick={onExit} />
             <h3 className="font-serif text-[22px] text-g-charcoal">Account</h3>
             <button onClick={handleDone}
                     className={`text-base ${usernameTaken ? 'text-g-gray' : 'text-g-deep font-semibold'}`}>
@@ -3250,11 +3272,11 @@
               </button>
             </div>
 
-            {/* Display name — inline editable */}
+            {/* Display name — inline editable, writes to draft */}
             <div className="mb-3">
               <p className="text-g-gray text-[13px] mb-1">Display name</p>
               <input className="input-field" placeholder="Your name"
-                     value={name} onChange={e => setName(e.target.value)} />
+                     value={name} onChange={e => onUpdateDraft({ displayName: e.target.value })} />
             </div>
 
             {/* Email — read-only, tap to change */}
@@ -3279,7 +3301,7 @@
                   style={usernameTaken ? {borderColor: '#C06E60'} : null}
                   placeholder="pick a username"
                   value={username}
-                  onChange={e => setUsername(e.target.value.replace(/\s/g,''))}
+                  onChange={e => onUpdateDraft({ username: e.target.value.replace(/\s/g,'') })}
                 />
                 <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm font-bold"
                       style={{color: usernameTaken ? '#C06E60' : '#5B8A72'}}>
@@ -3314,7 +3336,7 @@
                   <span className="text-g-gray">🔒</span>
                 </div>
               ) : (
-                <BirthdayPicker value={bday} onChange={setBday} />
+                <BirthdayPicker value={bday} onChange={(v) => onUpdateDraft({ birthday: v })} />
               )}
               <p className="text-g-gray text-[12px] italic mt-1">
                 {bdayLocked
@@ -3349,8 +3371,9 @@
               <div className="border-t border-g-line"></div>
               {[
                 ['Sign in with Google',   'google',   true ],
-                ['Sign in with Apple',    'apple',    false],
-                ['Sign in with Facebook', 'facebook', false],
+                // V15/Bug2: Apple + Facebook hidden via SOCIAL_PROVIDERS flag.
+                ...(SOCIAL_PROVIDERS.apple    ? [['Sign in with Apple',    'apple',    false]] : []),
+                ...(SOCIAL_PROVIDERS.facebook ? [['Sign in with Facebook', 'facebook', false]] : []),
               ].map(([label, key, linked], i, arr) => (
                 <div key={key}>
                   {linked ? (
@@ -3425,6 +3448,50 @@
                           className="px-5 py-2 rounded-full text-white font-semibold text-sm"
                           style={{background:'#C06E60'}}>
                     Yes, delete
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* V15/Bug5: birthday confirmation modal — non-destructive lock.
+              Same pattern as E8 sign-out modal: sage backdrop, brand-styled
+              card, ARIA attrs. Sage filled "Save birthday" because the action
+              is non-destructive (compare with E7 delete which would use red). */}
+          {showBdayConfirm && (
+            <div
+              className="absolute inset-0 z-50 flex items-center justify-center px-6 fade-in"
+              style={{ backgroundColor: 'rgba(61, 94, 76, 0.6)' }}
+              onClick={() => setShowBdayConfirm(false)}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="bday-confirm-title"
+            >
+              <div
+                className="bg-white rounded-2xl p-7 w-full text-center"
+                style={{ maxWidth: '320px' }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <h3 id="bday-confirm-title" className="font-serif text-[22px] text-g-green mb-3">Save your birthday?</h3>
+                <p className="text-g-charcoal text-sm leading-relaxed mb-6">
+                  Once saved, this can't be changed.<br/>If you make a mistake, contact support and we'll help.
+                </p>
+                <div className="flex justify-center gap-3">
+                  <button
+                    onClick={() => setShowBdayConfirm(false)}
+                    className="px-6 py-2.5 rounded-full bg-white border border-g-line text-g-deep text-[14px] font-semibold transition-all active:scale-[0.98] active:bg-g-sage"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={() => {
+                      setShowBdayConfirm(false);
+                      // Commit with birthdaySet=true. Lock is permanent.
+                      onCommit({ ...d, birthdaySet: true });
+                    }}
+                    className="px-6 py-2.5 rounded-full bg-g-green text-white text-[14px] font-semibold transition-all active:scale-[0.98] active:bg-g-deep"
+                  >
+                    Save birthday
                   </button>
                 </div>
               </div>
@@ -4065,6 +4132,53 @@
       // this gate, returning users would get routed to 'values' picker.
       const [awaitingHydration, setAwaitingHydration] = useState(false);
 
+      // V15/Bug4: Account form draft — preserves in-progress edits across
+      // sub-screen navigation (Change email/mobile/password). Null when not
+      // in an Account session; initialized lazily on enterAccount().
+      const [accountDraft, setAccountDraft] = useState(null);
+
+      // V15/Bug4: Account session helpers.
+      const enterAccount = () => {
+        // Initialize from data.user only if no draft exists. Persists across
+        // sub-screen jumps; cleared only on exit/commit/delete.
+        if (!accountDraft) {
+          setAccountDraft({
+            displayName:      (data.user && data.user.displayName) || '',
+            email:             (data.user && data.user.email)       || '',
+            username:          (data.user && data.user.username)    || '',
+            mobile:            (data.user && data.user.mobile)      || '',
+            birthday:          (data.user && data.user.birthday)    || '',
+            birthdaySet:      !!(data.user && data.user.birthdaySet),
+            // Snapshot of original username, used by AccountScreen for the
+            // "unchanged" check in availability validation. Doesn't drift.
+            originalUsername:  (data.user && data.user.username)    || '',
+          });
+        }
+        go('account');
+      };
+      const exitAccount = () => {
+        // Silent discard per project spec — no confirm prompt (matches brand voice).
+        setAccountDraft(null);
+        go('settings');
+      };
+      const commitAccountDraft = (overridePatch) => {
+        // Bug 5 will pass an overridePatch with birthdaySet=true after the
+        // confirm modal lands. For Bug 4 alone, pass nothing and we commit
+        // the draft as-is. Either way, originalUsername is stripped — it's
+        // a UI-only field, not part of data.user.
+        const finalPatch = overridePatch || accountDraft;
+        if (finalPatch) {
+          const { originalUsername: _strip, ...userPatch } = finalPatch;
+          updateData({ user: { ...(data.user || {}), ...userPatch } });
+        }
+        setAccountDraft(null);
+        go('settings');
+      };
+      const updateAccountDraft = (patch) => {
+        // Functional setter — safe across rapid keystrokes / batched updates.
+        setAccountDraft(prev => prev ? { ...prev, ...patch } : prev);
+      };
+
       // V15/J1: pure resolver — picks the right screen given current auth + data.
       // Uses fine-grained resume so users don't lose mid-onboarding progress.
       // Anonymous + no topValues → 'welcome'. The Welcome screen's "Continue
@@ -4075,8 +4189,8 @@
         const hasFiveValues = !!(d && d.fiveValues && d.fiveValues.length);
         if (user) {
           if (hasTopValues)  return 'home';
-          if (hasFiveValues) return 'top3';   // resume: picked 5 but not 3
-          return 'values';                    // first onboarding step
+          if (hasFiveValues) return 'top3';   // resume: picked 5 but not 3 (skip Promise — already past it)
+          return 'promise';                   // V15/Bug7: soft entry — read context cards before values picker
         }
         return hasTopValues ? 'home' : 'welcome';
       }
@@ -4479,7 +4593,31 @@
         case 'well_be_here':
           view = <WellBeHere onBack={() => go('welcome')} />; break;
         case 'promise':
-          view = <PromiseScreen onContinue={() => go('signup')} onBack={() => go('in_right_place')} />; break;
+          // V15/Bug7: context-aware Promise routing.
+          //   onContinue: always to values picker. The V14 signup detour is gone —
+          //     anonymous users do mirror onboarding without signing up (sign up
+          //     via Welcome's CTAs or future C4 nudge).
+          //   onBack: signed-in + no topValues = post-signup entry, exit + signOut.
+          //     Anonymous flow → normal back to in_right_place (existing).
+          view = <PromiseScreen
+            onContinue={() => go('values')}
+            onBack={() => {
+              const isSignedIn   = !!(groundedApi && groundedApi.groundedAuth && groundedApi.groundedAuth.currentUser);
+              const hasTopValues = !!(data.topValues && data.topValues.length);
+              if (isSignedIn && !hasTopValues) {
+                if (groundedApi && groundedApi.groundedAuth && groundedApi.groundedAuth.signOut) {
+                  // Fire-and-forget — A3 listener catches the sign-out event
+                  // and resolver routes to welcome. No await needed.
+                  groundedApi.groundedAuth.signOut();
+                } else {
+                  // Defensive fallback (firebase.js missing / fallback mode).
+                  setData({}); go('welcome');
+                }
+              } else {
+                go('in_right_place');  // anonymous flow back, existing behavior
+              }
+            }}
+          />; break;
         case 'signup':
           view = <SignUpScreen
             groundedAuth={groundedApi && groundedApi.groundedAuth}
@@ -4685,7 +4823,7 @@
             onNav={navTo}
             onPremium={() => go('premium')}
             onSupport={() => go('support')}
-            onAccount={() => go('account')}
+            onAccount={() => enterAccount()}
             onNotif={() => go('notifications')}
             onLanguage={() => go('language')}
             onExport={() => go('export_data')}
@@ -4717,30 +4855,38 @@
         case 'support':
           view = <SupportScreen onBack={() => go('settings')} />; break;
         case 'account':
-          view = <AccountScreen data={data}
-            onBack={() => go('settings')}
-            onSave={(patch) => {
-              updateData({ user: { ...(data.user || {}), ...patch } });
-              go('settings');
-            }}
+          // V15/Bug4: AccountScreen reads form values from accountDraft instead
+          // of data. enterAccount() initializes the draft before this case fires.
+          view = <AccountScreen
+            draft={accountDraft}
+            onUpdateDraft={updateAccountDraft}
+            onCommit={(patch) => commitAccountDraft(patch)}
+            onExit={() => exitAccount()}
             onManagePlan={() => go('premium')}
             onChangeEmail={() => go('change_email')}
             onChangeMobile={() => go('change_mobile')}
             onChangePassword={() => go('change_password')}
-            onDeleteAccount={() => { localStorage.removeItem(LS_KEY); setData({}); go('welcome'); }}
+            onDeleteAccount={() => {
+              // V15/Bug4: defensive — account is being deleted, draft is meaningless.
+              setAccountDraft(null);
+              localStorage.removeItem(LS_KEY); setData({}); go('welcome');
+            }}
           />; break;
         case 'change_email':
+          // V15/Bug4: writes to accountDraft (not data.user). Email change only
+          // commits to data.user when user taps Done in Account.
           view = <ChangeEmailScreen data={data}
             onBack={() => go('account')}
             onSaved={(newEmail) => {
-              updateData({ user: { ...(data.user || {}), email: newEmail } });
+              updateAccountDraft({ email: newEmail });
               go('account');
             }} />; break;
         case 'change_mobile':
+          // V15/Bug4: writes to accountDraft (not data.user). Same commit point as email.
           view = <ChangeMobileScreen data={data}
             onBack={() => go('account')}
             onSaved={(newMobile) => {
-              updateData({ user: { ...(data.user || {}), mobile: newMobile } });
+              updateAccountDraft({ mobile: newMobile });
               go('account');
             }} />; break;
         case 'change_password':
