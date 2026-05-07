@@ -2776,13 +2776,18 @@
             <p className="text-center text-g-charcoal text-sm mt-1">Build yourself, daily 🌿</p>
             <div className="space-y-3 mt-5 pb-4">
               {items.map(e => {
-                const done = !!completedToday[e.id];
+                // V18/Bug13: 3-state — distinguish draft from submitted so users
+                // can re-enter drafts via "Continue →" button. Legacy V15 entries
+                // (Array<string>, no submitted field) treated as submitted.
+                const entry = completedToday[e.id];
+                const isSubmitted = Array.isArray(entry) ? !!entry.length : (!!entry && entry.submitted !== false);
+                const isDraft = !!entry && !isSubmitted;
                 return (
                   <div key={e.id} className="card-outline p-5 relative">
                     <div className="flex items-start justify-between mb-2">
                       <div className="flex items-center gap-2">
-                        <div className={`w-5 h-5 rounded ${done ? 'bg-green-600' : 'border border-g-line'} text-white text-xs flex items-center justify-center`}>
-                          {done ? '✓' : ''}
+                        <div className={`w-5 h-5 rounded ${isSubmitted ? 'bg-green-600' : 'border border-g-line'} text-white text-xs flex items-center justify-center`}>
+                          {isSubmitted ? '✓' : ''}
                         </div>
                         <span className="font-bold text-g-charcoal text-[14px] tracking-wide">{e.short}</span>
                       </div>
@@ -2800,9 +2805,11 @@
                     </div>
                     <p className="text-g-charcoal text-sm leading-relaxed">{e.prompt}</p>
                     <p className="text-right text-sm mt-3 text-g-charcoal">
-                      {done
+                      {isSubmitted
                         ? <span>Done ✓</span>
-                        : <button onClick={() => onStart(e.id)} className="underline-offset-2">Start →</button>}
+                        : <button onClick={() => onStart(e.id)} className="underline-offset-2">
+                            {isDraft ? 'Continue →' : 'Start →'}
+                          </button>}
                     </p>
                   </div>
                 );
@@ -2910,7 +2917,10 @@
               <div className="card-outline p-5" style={lockedStyle}>
                 {items.map((val, i) => (
                   <div key={i} className="flex items-start gap-3 mb-2">
-                    <span className="text-g-gray w-5">{i+1}.</span>
+                    {/* V18/Bug12: sync span text-size + top-padding with input
+                        (input is 15px font, 4px top-padding) so "1." aligns
+                        on the same baseline as typed text. */}
+                    <span className="text-g-gray w-5 text-[15px] pt-1">{i+1}.</span>
                     <input className="numbered-input"
                       value={val}
                       disabled={isLocked}
