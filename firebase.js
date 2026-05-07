@@ -75,7 +75,9 @@ import {
   doc,
   getDoc,
   setDoc,
+  updateDoc,
   deleteDoc,
+  deleteField,
   serverTimestamp,
   onSnapshot,
   runTransaction,
@@ -625,6 +627,143 @@ const groundedSync = {
   async flush() {
     if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
     await flushPendingSave();
+  },
+
+  // ── DELETE HELPERS (Bug 15 / V19) ─────────────────────────────────────────
+  //
+  //  Why these exist: setDoc(merge:true) treats missing keys as "don't update"
+  //  not "delete." So `delete data.reflections[today]` on the React side
+  //  followed by save() leaves the field intact on the server. These helpers
+  //  use Firestore's deleteField() sentinel via updateDoc with dotted field
+  //  paths to actually remove nested keys.
+  //
+  //  Each helper:
+  //    1. Flushes any pending debounced save FIRST. Otherwise a stale patch
+  //       could resurrect the just-deleted field via merge.
+  //    2. Updates currentDocData optimistically + notifies subscribers, so
+  //       React reflects the delete instantly.
+  //    3. Issues the Firestore deleteField call (signed-in) or mutates
+  //       localStorage (anonymous).
+  //    4. Returns Promise<{ok, code?, error?}> matching the rest of the API.
+  //
+  //  Day-level cleanup of `completed[dayKey]` when its last exerciseId is
+  //  removed is intentionally left to the Frontend's presentation layer —
+  //  doing it server-side cleanly needs a read-then-write transaction.
+
+  /** Delete a single reflection entry by date key (e.g. '2026-05-08'). */
+  async deleteReflection(dayKey) {
+    if (!dayKey || typeof dayKey !== "string") {
+      return { ok: false, code: "invalid-key" };
+    }
+    if (currentUser) {
+      // Land any pending debounced save first to avoid stale-patch resurrection
+      if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
+      await flushPendingSave();
+      // Optimistic local update
+      if (currentDocData.reflections && (dayKey in currentDocData.reflections)) {
+        const next = { ...currentDocData.reflections };
+        delete next[dayKey];
+        currentDocData = { ...currentDocData, reflections: next };
+        notifyData(currentDocData);
+      }
+      try {
+        await updateDoc(doc(db, "users", currentUser.uid), {
+          ["reflections." + dayKey]: deleteField(),
+          updatedAt: serverTimestamp(),
+        });
+        return { ok: true };
+      } catch (e) {
+        return { ok: false, code: e.code, error: e.message };
+      }
+    }
+    // Anonymous mode — mutate localStorage and notify
+    const local = loadAnonData();
+    if (local.reflections && (dayKey in local.reflections)) {
+      delete local.reflections[dayKey];
+      saveAnonData(local);
+    }
+    currentDocData = local;
+    notifyData(currentDocData);
+    return { ok: true };
+  },
+
+  /** Delete a single free-write entry by date key. Same semantics as deleteReflection. */
+  async deleteFreeWrite(dayKey) {
+    if (!dayKey || typeof dayKey !== "string") {
+      return { ok: false, code: "invalid-key" };
+    }
+    if (currentUser) {
+      if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
+      await flushPendingSave();
+      if (currentDocData.freeWrites && (dayKey in currentDocData.freeWrites)) {
+        const next = { ...currentDocData.freeWrites };
+        delete next[dayKey];
+        currentDocData = { ...currentDocData, freeWrites: next };
+        notifyData(currentDocData);
+      }
+      try {
+        await updateDoc(doc(db, "users", currentUser.uid), {
+          ["freeWrites." + dayKey]: deleteField(),
+          updatedAt: serverTimestamp(),
+        });
+        return { ok: true };
+      } catch (e) {
+        return { ok: false, code: e.code, error: e.message };
+      }
+    }
+    const local = loadAnonData();
+    if (local.freeWrites && (dayKey in local.freeWrites)) {
+      delete local.freeWrites[dayKey];
+      saveAnonData(local);
+    }
+    currentDocData = local;
+    notifyData(currentDocData);
+    return { ok: true };
+  },
+
+  /**
+   * Delete a single exercise entry on a given day. Targets the 2-level nested
+   * path `completed.<dayKey>.<exerciseId>`. Confirmed safe with V19's 5
+   * snake_case exerciseIds (do_for_me, thank_me, small_wins, my_strengths,
+   * self_date) — all dot-free, so the dotted field path is unambiguous.
+   * Day-level map left in place even if empty after delete (presentation concern).
+   */
+  async deleteExerciseEntry(dayKey, exerciseId) {
+    if (!dayKey      || typeof dayKey      !== "string" ||
+        !exerciseId  || typeof exerciseId  !== "string") {
+      return { ok: false, code: "invalid-key" };
+    }
+    if (currentUser) {
+      if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
+      await flushPendingSave();
+      // Optimistic local update
+      const completed = { ...(currentDocData.completed || {}) };
+      const dayMap = completed[dayKey];
+      if (dayMap && (exerciseId in dayMap)) {
+        const nextDay = { ...dayMap };
+        delete nextDay[exerciseId];
+        completed[dayKey] = nextDay;
+        currentDocData = { ...currentDocData, completed };
+        notifyData(currentDocData);
+      }
+      try {
+        await updateDoc(doc(db, "users", currentUser.uid), {
+          ["completed." + dayKey + "." + exerciseId]: deleteField(),
+          updatedAt: serverTimestamp(),
+        });
+        return { ok: true };
+      } catch (e) {
+        return { ok: false, code: e.code, error: e.message };
+      }
+    }
+    const local = loadAnonData();
+    if (local.completed && local.completed[dayKey] && (exerciseId in local.completed[dayKey])) {
+      delete local.completed[dayKey][exerciseId];
+      saveAnonData(local);
+    }
+    currentDocData = local;
+    notifyData(currentDocData);
+    return { ok: true };
   },
 
   /**
