@@ -1695,7 +1695,7 @@
                 when editable, "✓ Sent" when locked. */}
             {isLocked
               ? <span className="text-g-green text-sm font-semibold">✓ Sent</span>
-              : <SaveDraftButton canSave={!!text.trim()} onSave={() => onSaveDraft(prompt, text, valueLink)} />}
+              : <SaveDraftButton canSave={!!text.trim() || !!existing} onSave={() => onSaveDraft(prompt, text, valueLink)} />}
           </div>
           <div className="flex-1 overflow-y-auto no-scrollbar px-6">
             <h2 className="font-serif text-[24px] text-g-charcoal mt-2 mb-4">Today's Reflection</h2>
@@ -1817,7 +1817,7 @@
                 when editable, "✓ Sent" when locked. */}
             {isLocked
               ? <span className="text-g-green text-sm font-semibold">✓ Sent</span>
-              : <SaveDraftButton canSave={!!text.trim()} onSave={() => onSaveDraft(text)} />}
+              : <SaveDraftButton canSave={!!text.trim() || !!raw} onSave={() => onSaveDraft(text)} />}
           </div>
           <div className="flex-1 overflow-y-auto no-scrollbar px-6">
             <h2 className="font-serif text-[24px] text-g-charcoal mt-2 mb-4">Free Write ✏️</h2>
@@ -2895,7 +2895,9 @@
       };
       const addMore = () => setItems([...items, '']);
       const dateLabel = useMemo(() => monthDay(), []);
-      const canSave = items.some(i => i.trim().length > 0);
+      // V19/Bug14: enable Save when there's an existing draft, so user can
+      // clear it via empty Save (handler deletes the entry server-side).
+      const canSave = items.some(i => i.trim().length > 0) || !!existing;
       const lockedStyle = isLocked ? { backgroundColor: '#E8F0EC' } : null;
       return (
         <div className="phone-frame fade-in">
@@ -4654,14 +4656,34 @@
       const saveExerciseEntry = (id, items, submitted) => {
         const today = todayKey();
         const completed = { ...(data.completed || {}) };
-        completed[today] = { ...(completed[today] || {}), [id]: { items, submitted: !!submitted } };
+        // V19/Bug14: empty save clears this exercise's draft. If it was the
+        // last entry on today's date, also remove the day-level key so calendar
+        // dot logic stays clean. Mirrors the saveFreeWrite delete-on-empty pattern.
+        const filtered = (items || []).filter(i => i && i.trim());
+        if (filtered.length > 0) {
+          completed[today] = { ...(completed[today] || {}), [id]: { items: filtered, submitted: !!submitted } };
+        } else {
+          const dayEntries = { ...(completed[today] || {}) };
+          delete dayEntries[id];
+          if (Object.keys(dayEntries).length > 0) {
+            completed[today] = dayEntries;
+          } else {
+            delete completed[today];
+          }
+        }
         updateData({ completed });
       };
 
       const saveReflection = (q, a, valueKey, submitted) => {
         const today = todayKey();
         const reflections = { ...(data.reflections || {}) };
-        reflections[today] = { q, a, valueKey, submitted: !!submitted };
+        // V19/Bug14: empty save clears the reflection. Same delete-on-empty
+        // pattern as saveFreeWrite.
+        if (a && a.trim()) {
+          reflections[today] = { q, a, valueKey, submitted: !!submitted };
+        } else {
+          delete reflections[today];
+        }
         updateData({ reflections });
       };
 
