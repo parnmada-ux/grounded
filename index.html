@@ -118,6 +118,14 @@
     .btn-pill-primary  { background: #5B8A72; color: white; }
     .btn-pill-primary:active { background: #3D5E4C; transform: scale(0.98); }
     .btn-pill-disabled { background: #B8C8BD; color: white; cursor: not-allowed; }
+    /* V45: iOS-aware bottom padding for ambient footers (auto-submit disclaimer
+       on Reflection / FreeWrite / ExerciseEntry). On iOS the home indicator
+       gesture bar occupies ~34px at the bottom — without safe-area-inset the
+       footer text gets obscured. max(env(...), 32px) gives 34px on iPhone /
+       32px elsewhere (consistent breathing across platforms). */
+    .pb-safe-bottom {
+      padding-bottom: max(env(safe-area-inset-bottom), 32px);
+    }
     .card {
       background: #FFFFFF;
       border-radius: 18px;
@@ -222,6 +230,17 @@
     // Phone Auth lands (separate ticket post-20-user testing). UI + draft logic
     // preserved — flipping to true re-exposes the field with no code changes.
     const ACCOUNT_FIELDS = { mobile: false };
+
+    // V43/Phase2: master toggle for Trial Welcome popup + Day 5-6 banner.
+    // OFF for free-wheel user testing on core flow (pre-Edward consult /
+    // pre-Backend M2). Flag-gated at 3 entry points:
+    //   (1) aligned_self router — anon → mirror_ready (no Trial Welcome)
+    //   (2) no_pressure router — same
+    //   (3) HomeScreen Day 5-6 banner render
+    // TrialWelcomeScreen + TrialBanner components + their routes stay intact;
+    // flag only blocks PRODUCTION entry points. Dev panel jumps continue to
+    // render both screens for FE testing. Flip to true when ready to re-enable.
+    const PHASE_2_TRIAL_UI_ENABLED = false;
 
     // V16/Bug9: dev panel gate — hidden in production. Surfaced on localhost,
     // file:// origins, or via ?dev=1 query (lets Parn test prod on phone).
@@ -857,11 +876,21 @@
     // ============================================================
     // 2. RESONANCE CHECK
     // ============================================================
+    // V42: Resonance Check rewrite — positioning lock. Questions reframed
+    //   around aspirational identity ("the version of yourself you'd like to
+    //   know") rather than pathological framing ("feeling lost"). Answer
+    //   "Not really" → "Not yet" (warmer, opens door for future return).
+    //   Scoring inverted to count "Not yet": 0-2 → target user (in_right_place),
+    //   3-4 → graceful off-ramp (grounded_already).
     const QUESTIONS = [
-      { id: 'q1', text: '"Have you ever felt like you used to know who you were... but now you\'re not sure?"' },
-      { id: 'q2', text: '"Do you sometimes feel like you\'re living someone else\'s life?"' },
-      { id: 'q3', text: 'Connecting with like-minded people can help us better understand our values and life direction. — "Would you like to connect with others who share your perspectives?"' },
+      { id: 'q1', text: 'Is there a version of yourself you\'d like to know better?' },
+      { id: 'q2', text: 'Do you wish you had a quieter space to check in with yourself?' },
+      { id: 'q3', text: 'Would knowing your values clearly help you make better decisions?' },
+      { id: 'q4', text: 'Are you interested in living a little more intentionally?' },
     ];
+    // V44: "Not yet" → "Not really" reverted per Parn — "Not really" reads
+    //   more natural, less of a forced opener feel. Value + label both flip.
+    //   Scoring still counts the "no" response; just the literal value changed.
     const OPTIONS = [
       { value: 'yes', label: 'Yes' },
       { value: 'sometimes', label: 'Sometimes' },
@@ -872,8 +901,10 @@
       const [answers, setAnswers] = useState({});
       const allAnswered = QUESTIONS.every(q => answers[q.id]);
       const computeResult = () => {
-        const yesLike = Object.values(answers).filter(v => v === 'yes' || v === 'sometimes').length;
-        return yesLike >= 2 ? 'in_right_place' : 'grounded_already';
+        // V42 logic (V44 value rename): count "Not really" responses. ≤2 =
+        // strong resonance → in_right_place. ≥3 = weak resonance → off-ramp.
+        const noCount = Object.values(answers).filter(v => v === 'not_really').length;
+        return noCount <= 2 ? 'in_right_place' : 'grounded_already';
       };
       return (
         <div className="phone-frame fade-in">
@@ -913,16 +944,19 @@
     // V34: button-up pattern (matches TYT V33). Button moved inside flex-1
     //   wrapper so the whole stack centers as one unit; pb-20 biases visible
     //   center upward by ~40px for thumb-friendly upper-middle landing.
+    // V42: copy replace — aspirational framing ("exactly who Grounded was
+    //   made for", "the version of yourself you want to know and become")
+    //   replaces the pathological "you're not alone in this experience" line.
     const InRightPlace = ({ onContinue }) => (
       <div className="phone-frame fade-in">
         <div className="flex-1 flex flex-col items-center justify-center px-8 pb-20 text-center">
           <div className="text-3xl mb-5">🌿</div>
           <h2 className="text-[26px] font-serif text-g-deep leading-snug">
-            "You're not alone in this experience, and you don't have to stay in it."
+            You're exactly who Grounded was made for.
           </h2>
           <div className="card mt-8 px-6 py-6 w-full">
             <p className="text-g-charcoal text-sm leading-relaxed">
-              Grounded is here to help you remember who you are.
+              What you're looking for — clarity, intention, the version of yourself you want to know and become — that's what Grounded is built around.
             </p>
           </div>
           <div className="mt-8 flex flex-col items-center">
@@ -937,20 +971,21 @@
     // ============================================================
     // V34: button-up pattern (matches TYT V33). Two-button variant —
     //   gap-5 between PillButton and "Maybe later" link (20px breathing room).
+    // V42: copy replace — drops "You seem pretty grounded already!" framing
+    //   (was attributing groundedness to user from a 3-question quiz, which
+    //   felt false). New copy "Take what feels right" reframes as soft
+    //   invitation without false attribution. Route name preserved for
+    //   backwards compat in dev panel + history stack.
     const GroundedAlready = ({ onCheckOut, onLater }) => (
       <div className="phone-frame fade-in">
         <div className="flex-1 flex flex-col items-center justify-center px-7 pb-20 text-center">
           <div className="text-3xl mb-4">🌿</div>
           <h2 className="text-[26px] font-serif text-g-deep leading-snug">
-            You seem pretty<br/>grounded already!
+            Take what feels right.
           </h2>
           <div className="card mt-6 px-5 py-5 w-full">
-            <p className="text-g-charcoal text-sm leading-relaxed mb-3 text-center">That's wonderful.</p>
-            <p className="text-g-charcoal text-sm leading-relaxed mb-3 text-center">
-              Grounded is here whenever you need it — for staying connected to yourself, or finding your way back if life gets foggy.
-            </p>
             <p className="text-g-charcoal text-sm leading-relaxed text-center">
-              There are sides of yourself you may not even be aware of yet — they might take you somewhere you never expected.
+              Grounded is built for the moments you want to know yourself a little more. There's no rush — come back when it feels like the right time.
             </p>
           </div>
           <div className="mt-8 flex flex-col items-center gap-5">
@@ -1629,7 +1664,9 @@
         if (h < 18) return { text: 'Good afternoon', emoji: '🌤️' };
         return { text: 'Good evening', emoji: '🌙' };
       }, []);
-      const showBanner = typeof trialDaysLeft === 'number' && trialDaysLeft > 0 && trialDaysLeft <= 2;
+      // V43/Phase2: banner render also gated by PHASE_2_TRIAL_UI_ENABLED.
+      // When OFF, banner suppressed even if trial state would normally show it.
+      const showBanner = PHASE_2_TRIAL_UI_ENABLED && typeof trialDaysLeft === 'number' && trialDaysLeft > 0 && trialDaysLeft <= 2;
       return (
         <div className="phone-frame fade-in">
           {showBanner && <TrialBanner daysLeft={trialDaysLeft} onAction={onTrialBannerTap} />}
@@ -1730,7 +1767,11 @@
                 <span className="text-g-green font-bold">{valueLink}</span>
               </p>
             </div>
-            <textarea className="textarea-field mt-4" rows={6}
+            {/* V44: textarea rows 6 → 4 — shrinks default height so total
+                content fits the frame without marginal scroll (which felt
+                choppy when keyboard pushed scroll area smaller). User can
+                still type as much as they want; textarea grows naturally. */}
+            <textarea className="textarea-field mt-4" rows={4}
               placeholder="Click to write" value={text}
               onChange={e=>setText(e.target.value)}
               disabled={isLocked}
@@ -1742,15 +1783,24 @@
               </div>
             )}
           </div>
-          {/* V35: combined footer — Send button + View-history link bundled
-              into single pb-20 cluster (was: pb-3 + pb-6 stacked, low + tight).
-              Both lift together to thumb-friendly position. */}
+          {/* V35: combined footer — Send button + View-history link bundled.
+              V44: disclaimer removed from inside this cluster (restored V42
+              visual grouping of Send + View-history). Disclaimer relocated
+              to ambient bottom footer below. */}
           <div className="pt-3 pb-20 flex flex-col items-center gap-4">
             {!isLocked && (
               <PillButton onClick={() => setShowConfirm(true)} disabled={!text.trim()}>Send</PillButton>
             )}
             <button onClick={onHistory} className="text-g-deep text-sm underline font-semibold">📅 View my reflections →</button>
           </div>
+          {/* V44: auto-submit disclaimer — ambient bottom footer, outside the
+              scroll area + outside the V42 cluster. Only renders while editable
+              (locked entries don't need the reassurance). */}
+          {!isLocked && (
+            <p className="text-center text-g-gray text-xs italic mt-6 pb-safe-bottom px-6">
+              Drafts auto-submit at midnight, so nothing gets lost.
+            </p>
+          )}
           {showConfirm && (
             <ConfirmSendModal
               heading="Send your reflection?"
@@ -1845,20 +1895,31 @@
           </div>
           <div className="flex-1 overflow-y-auto no-scrollbar px-6">
             <h2 className="font-serif text-[24px] text-g-charcoal mt-2 mb-4">Free Write ✏️</h2>
-            <textarea className="textarea-field" rows={12}
+            {/* V44: rows 12 → 8 + minHeight 280 → 200 — shrinks default height
+                so total content fits in frame without marginal scroll (same
+                fix as ReflectionScreen). User can type more freely than
+                Reflection so generous size preserved. */}
+            <textarea className="textarea-field" rows={8}
               placeholder="What's on your mind?" value={text}
               onChange={e=>setText(e.target.value)}
               disabled={isLocked}
-              style={isLocked ? { minHeight: '280px', backgroundColor: '#E8F0EC' } : { minHeight: '280px' }} />
+              style={isLocked ? { minHeight: '200px', backgroundColor: '#E8F0EC' } : { minHeight: '200px' }} />
             <p className="text-center text-g-charcoal text-sm mt-5">Your words stay yours.</p>
           </div>
-          {/* V35: combined footer — same pattern as ReflectionScreen above. */}
+          {/* V35: combined footer. V44: disclaimer removed from cluster, moved
+              to ambient bottom footer below (same as ReflectionScreen). */}
           <div className="pt-3 pb-20 flex flex-col items-center gap-4">
             {!isLocked && (
               <PillButton onClick={() => setShowConfirm(true)} disabled={!text.trim()}>Send</PillButton>
             )}
             <button onClick={onHistory} className="text-g-deep text-sm underline font-semibold">📅 View my writing history →</button>
           </div>
+          {/* V44: auto-submit disclaimer — ambient bottom footer. */}
+          {!isLocked && (
+            <p className="text-center text-g-gray text-xs italic mt-6 pb-safe-bottom px-6">
+              Drafts auto-submit at midnight, so nothing gets lost.
+            </p>
+          )}
           {showConfirm && (
             <ConfirmSendModal
               heading="Send your free write?"
@@ -2949,8 +3010,11 @@
               Send button reads as part of same content group with mt-5 (20px)
               gap from italic. Empty space lands BELOW button at frame bottom.
               When locked (isLocked=true), Send disappears — italic sub becomes
-              the natural last element. */}
-          <div className="flex-1 overflow-y-auto no-scrollbar px-6">
+              the natural last element.
+              V45: pb-8 on flex-1 — adds 32px breathing space at the bottom of
+              scroll content so the Send button doesn't kiss the disclaimer /
+              iOS gesture bar on long item lists (Parn flag, mom's iOS test). */}
+          <div className="flex-1 overflow-y-auto no-scrollbar px-6 pb-8">
             <p className="text-g-charcoal text-sm mt-1">{dateLabel}</p>
             <h2 className="font-serif text-[20px] text-g-charcoal mt-4 mb-3">{exercise.entryHeading}</h2>
             {exercise.type === 'numbered' ? (
@@ -2970,7 +3034,8 @@
                 {!isLocked && <button onClick={addMore} className="text-g-gray text-sm mt-1">+ Add more</button>}
               </div>
             ) : (
-              <textarea className="textarea-field" rows={6}
+              // V44: textarea rows 6 → 4 — same scroll-fit fix as Reflection.
+              <textarea className="textarea-field" rows={4}
                 placeholder="Click to write"
                 value={items[0] || ''}
                 disabled={isLocked}
@@ -2980,12 +3045,21 @@
             <p className="text-center text-g-charcoal text-sm mt-4">
               💡 Doesn't have to be big.<br/>Anything for you counts.
             </p>
+            {/* V44: disclaimer removed from inside cluster, moved to ambient
+                bottom footer below (matches Reflection/FreeWrite pattern). */}
             {!isLocked && (
               <div className="mt-5 flex justify-center">
                 <PillButton onClick={() => setShowConfirm(true)} disabled={!canSave}>Send</PillButton>
               </div>
             )}
           </div>
+          {/* V44: auto-submit disclaimer — ambient bottom footer (matches
+              Reflection/FreeWrite pattern). */}
+          {!isLocked && (
+            <p className="text-center text-g-gray text-xs italic mt-6 pb-safe-bottom px-6">
+              Drafts auto-submit at midnight, so nothing gets lost.
+            </p>
+          )}
           {showConfirm && (
             <ConfirmSendModal
               heading="Send your entry?"
@@ -5095,6 +5169,11 @@
       // V15: skip echoing storage on hydration ticks (server snapshots, initial localStorage load)
       const isHydratingRef = useRef(true);
 
+      // V43: run-once guard for the boot-time auto-submit sweep. Without it,
+      // every data-change re-render would re-trigger the sweep effect (because
+      // it depends on `data`), creating a feedback loop.
+      const autoSubmitRanRef = useRef(false);
+
       // V15/J1: flips true on first onAuthChange fire (or 400ms backstop) — gates the splash.
       const [authResolved, setAuthResolved] = useState(false);
 
@@ -5429,6 +5508,87 @@
           if (next) setData(prev => ({ ...prev, dailyQuestion: next }));
         }
       }, [data.dailyQuestion, data.topValues]);
+
+      // V43: auto-submit past-day drafts on app open. Runs once after boot
+      // resolves + data hydrates. Sweeps three draft buckets:
+      //   • data.completed[dayKey][exerciseId] = { items, submitted, ... }
+      //   • data.reflections[dayKey]           = { q, a, valueKey, submitted, ... }
+      //   • data.freeWrites[dayKey]            = { text, submitted, ... }
+      // For any entry where dayKey < today AND submitted === false, mark
+      // submitted: true and tag autoSubmitted: true (analytics metadata).
+      // Legacy V15 shapes (Array<string> entries, plain-string freeWrites) are
+      // skipped — they were always implicitly-submitted in the V15 model.
+      // Run-once guard via ref prevents the effect from re-firing on each
+      // subsequent data change.
+      useEffect(() => {
+        if (bootState !== 'ready' || !authResolved) return;
+        if (autoSubmitRanRef.current) return;
+        if (!data || Object.keys(data).length === 0) return; // wait for hydration
+
+        const todayK = todayKey();
+        const patch = {};
+        let dirty = false;
+
+        // ── Exercise entries ──
+        if (data.completed && typeof data.completed === 'object') {
+          const completedCopy = { ...data.completed };
+          let exDirty = false;
+          Object.keys(completedCopy).forEach((dayKey) => {
+            if (dayKey >= todayK) return; // skip today + future days
+            const dayMap = completedCopy[dayKey];
+            if (!dayMap || typeof dayMap !== 'object') return;
+            const dayCopy = { ...dayMap };
+            let dayDirty = false;
+            Object.keys(dayCopy).forEach((exId) => {
+              const entry = dayCopy[exId];
+              if (Array.isArray(entry)) return; // V15 legacy = implicitly submitted
+              if (entry && entry.submitted === false) {
+                dayCopy[exId] = { ...entry, submitted: true, autoSubmitted: true };
+                dayDirty = true;
+              }
+            });
+            if (dayDirty) {
+              completedCopy[dayKey] = dayCopy;
+              exDirty = true;
+            }
+          });
+          if (exDirty) { patch.completed = completedCopy; dirty = true; }
+        }
+
+        // ── Reflections ──
+        if (data.reflections && typeof data.reflections === 'object') {
+          const reflCopy = { ...data.reflections };
+          let reflDirty = false;
+          Object.keys(reflCopy).forEach((dayKey) => {
+            if (dayKey >= todayK) return;
+            const r = reflCopy[dayKey];
+            if (r && typeof r === 'object' && r.submitted === false) {
+              reflCopy[dayKey] = { ...r, submitted: true, autoSubmitted: true };
+              reflDirty = true;
+            }
+          });
+          if (reflDirty) { patch.reflections = reflCopy; dirty = true; }
+        }
+
+        // ── Free writes ──
+        if (data.freeWrites && typeof data.freeWrites === 'object') {
+          const fwCopy = { ...data.freeWrites };
+          let fwDirty = false;
+          Object.keys(fwCopy).forEach((dayKey) => {
+            if (dayKey >= todayK) return;
+            const w = fwCopy[dayKey];
+            // V15 legacy = string (implicitly submitted); V16+ = object
+            if (w && typeof w === 'object' && w.submitted === false) {
+              fwCopy[dayKey] = { ...w, submitted: true, autoSubmitted: true };
+              fwDirty = true;
+            }
+          });
+          if (fwDirty) { patch.freeWrites = fwCopy; dirty = true; }
+        }
+
+        autoSubmitRanRef.current = true;
+        if (dirty) setData(prev => ({ ...prev, ...patch }));
+      }, [bootState, authResolved, data]);
 
       const updateData = (patch) => setData(prev => ({ ...prev, ...patch }));
 
@@ -5833,10 +5993,10 @@
               // definition (returning users skip onboarding straight to home).
               // Trial Welcome IS their celebration — they skip V20 mirror_ready.
               // Signed-in users skip Trial Welcome (trial auto-started on signup).
-              // No localStorage gating — if a user navigates back to re-edit,
-              // re-showing Trial Welcome is acceptable (they can dismiss again).
+              // V43/Phase2: PHASE_2_TRIAL_UI_ENABLED gate — when OFF, anon
+              // users skip Trial Welcome and route directly to mirror_ready.
               const isAnon = !(groundedApi && groundedApi.groundedAuth && groundedApi.groundedAuth.currentUser);
-              go(isAnon ? 'trial_welcome' : 'mirror_ready');
+              go(isAnon && PHASE_2_TRIAL_UI_ENABLED ? 'trial_welcome' : 'mirror_ready');
             }}
             onSkip={() => go('no_pressure')}
             onBack={goBack}
@@ -5850,11 +6010,9 @@
             button="Continue"
             onContinue={() => {
               // V25/Phase2: same Mirror-completion gate as aligned_self save.
-              // Anonymous users finishing via the skip path are still new users
-              // by definition — Trial Welcome IS their celebration.
-              // Signed-in users skip Trial Welcome (trial auto-started on signup).
+              // V43/Phase2: gated behind PHASE_2_TRIAL_UI_ENABLED.
               const isAnon = !(groundedApi && groundedApi.groundedAuth && groundedApi.groundedAuth.currentUser);
-              go(isAnon ? 'trial_welcome' : 'mirror_ready');
+              go(isAnon && PHASE_2_TRIAL_UI_ENABLED ? 'trial_welcome' : 'mirror_ready');
             }} />; break;
         case 'mirror_ready':
           view = <MirrorReady data={data} onContinue={() => { ensureMirrorBaseline(); go('home'); }} />; break;
