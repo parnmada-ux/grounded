@@ -1998,14 +1998,15 @@
         <div className="flex-1 overflow-y-auto no-scrollbar px-6">
           {/* V47 (Aj. Hans feedback May 12): "Let's ground you." heading
               removed — it framed the app as coach. Grounded enables users
-              to be their own coach. Screen now opens quietly with the
-              question. mt-6 → mt-2 on question p so the icon-to-text rhythm
-              stays close (no orphaned space where the heading used to sit). */}
-          <div className="text-center mt-3">
-            <div className="text-3xl mb-2">🌱</div>
-            <p className="text-g-charcoal text-sm mt-2">"How are you feeling?"</p>
+              to be their own coach. The question itself is now promoted to
+              heading size (it's the user's own prompt to themselves, not
+              app-led framing). Leaf enlarged to match. Restores the BIG
+              top proportion the screen lost when the coach heading was cut. */}
+          <div className="text-center mt-6">
+            <div className="text-5xl mb-4">🌱</div>
+            <h2 className="font-serif text-[22px] text-g-charcoal leading-snug">How are you feeling?</h2>
           </div>
-          <div className="space-y-3 mt-5">
+          <div className="space-y-3 mt-8">
             {[
               { id: 'reminder',   label: '😌 Just need a reminder', target: 'gm_reminder' },
               { id: 'struggling', label: '😔 Struggling a bit',     target: 'gm_struggling' },
