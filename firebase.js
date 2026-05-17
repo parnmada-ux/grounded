@@ -40,6 +40,19 @@ const firebaseConfig = {
   appId: "1:684469836725:web:11fe438778a6334d3597fc",
 };
 
+// ── Cloudflare Worker URL (V25 — Phase 2 backend) ──────────────────────────
+//
+//  Set after deploying the Worker (see Worker Setup Guide). Used by
+//  groundedSync.startCheckout(), .openCustomerPortal(), .getFounderCount()
+//  and (V25.4) .redeemCode(). When this is the placeholder string, all
+//  payment helpers no-op gracefully — V20-style fallback behavior.
+//
+const WORKER_URL = "https://grounded-worker.grounded-api.workers.dev";
+
+function workerConfigured() {
+  return !!WORKER_URL && !WORKER_URL.startsWith("PASTE_");
+}
+
 
 // ─── 2. SDK imports (Firebase v10 modular, no build step) ───────────────────
 //
@@ -79,6 +92,7 @@ import {
   deleteDoc,
   deleteField,
   serverTimestamp,
+  Timestamp,
   onSnapshot,
   runTransaction,
 } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
@@ -188,6 +202,90 @@ window.addEventListener("online", () => { if (currentUser) setStatus("idle"); })
 window.addEventListener("offline", () => { if (currentUser) setStatus("offline"); });
 
 
+// ─── 5b. Subscription internals (V24 — Phase 2 read-path scaffolding) ───────
+//
+//  V24 adds a `subscription` object on every user doc. This is read-only
+//  scaffolding — no Stripe / webhook / Worker logic yet. See PUBLIC API
+//  §10 for the helpers Frontend uses to read this state.
+//
+//  Defensive defaults during V24/V25 dev period:
+//    A1: doc has no subscription field → effectiveTier = 'pro' (full access)
+//        Lets you and Frontend test the integration without needing every
+//        test doc to have a fully-formed subscription object set up first.
+//    B1: status='trial' but trialEndDate < now → effectiveTier = null
+//        Soft trial expiry — webhook (V26) will hard-flip status to 'lapsed';
+//        until then this fakes it client-side so demos feel real.
+//
+//  The eventual V27 migration script ensures every existing user doc has
+//  a proper subscription object, retiring A1's defensive fallback.
+
+const TRIAL_DAYS = 7;
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+/** The subscription object every newly-created user starts with. */
+function defaultTrialSubscription() {
+  return {
+    status: "trial",
+    tier: null,
+    lockedRate: null,
+    isFounder: false,
+    founderNumber: null,
+    isLifetime: false,
+    comp: null,
+    stripeCustomerId: null,
+    stripeSubscriptionId: null,
+    pricingPlanId: null,
+    trialStartDate: serverTimestamp(),
+    trialEndDate: Timestamp.fromDate(new Date(Date.now() + TRIAL_DAYS * MS_PER_DAY)),
+    paidStartAt: null,            // set by M3 webhook on first invoice.payment_succeeded
+    currentPeriodEnd: null,
+    cancelAtPeriodEnd: false,
+    gracePeriodEndDate: null,
+    lastWebhookEventId: null,     // M3 webhook idempotency key — last Stripe event ID applied
+    pricingHistory: [],
+  };
+}
+
+/** Pure read on a Timestamp-or-null field. Returns ms or null. */
+function tsMillis(t) {
+  return (t && typeof t.toMillis === "function") ? t.toMillis() : null;
+}
+
+/**
+ * The single source of truth for tier resolution. Frontend MUST go through
+ * groundedSync.getEffectiveTier() — never read raw subscription fields.
+ *
+ * Truth table (first match wins):
+ *   no sub field            → 'pro'      (A1 defensive default for V24 dev)
+ *   isLifetime              → 'premium'  (5 named testers, never charged)
+ *   comp 'grace14_v20'      → 'premium' if grace not expired, else null
+ *   status 'trial'          → 'pro' if trial not expired (B1), else null
+ *   status 'active'/'grace' → tier ('premium'|'pro') or null if missing
+ *   anything else (lapsed)  → null
+ */
+function computeEffectiveTier(sub) {
+  if (!sub) return "pro";                                          // A1
+  if (sub.isLifetime) return "premium";
+
+  if (sub.comp === "grace14_v20") {
+    const ends = tsMillis(sub.gracePeriodEndDate);
+    return (ends !== null && ends > Date.now()) ? "premium" : null;
+  }
+
+  if (sub.status === "trial") {
+    const ends = tsMillis(sub.trialEndDate);
+    if (ends !== null && ends < Date.now()) return null;            // B1
+    return "pro";
+  }
+
+  if (sub.status === "active" || sub.status === "grace") {
+    return (sub.tier === "premium" || sub.tier === "pro") ? sub.tier : null;
+  }
+
+  return null;
+}
+
+
 // ─── 6. Migration (anonymous localStorage → Firestore on first sign-in) ─────
 //
 //  Idempotent — safe to call repeatedly. Three cases:
@@ -258,11 +356,12 @@ async function ensureUserDocAndMigrate(user) {
       updatedAt: serverTimestamp(),
       migratedFromLocalStorage: false,
       user: baseUser,
+      subscription: defaultTrialSubscription(),     // V24: 7-day trial begins now
     }));
     return { migrated: false, source: "fresh" };
   }
 
-  // ── Case A: upload localStorage as initial doc
+  // ── Case A: upload localStorage as initial doc (one-time V20 hydrate carve-out)
   if (!remote && hasLocal) {
     await setDoc(userRef, clean({
       ...local,
@@ -271,6 +370,7 @@ async function ensureUserDocAndMigrate(user) {
       updatedAt: serverTimestamp(),
       migratedFromLocalStorage: true,
       user: { ...(local.user || {}), ...baseUser },
+      subscription: defaultTrialSubscription(),     // V24: 7-day trial begins now
     }));
     clearAnonData();
     return { migrated: true, source: "fresh-upload" };
@@ -627,6 +727,250 @@ const groundedSync = {
   async flush() {
     if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
     await flushPendingSave();
+  },
+
+  // ── SUBSCRIPTION HELPERS (V24 — Phase 2 read-path scaffolding) ─────────────
+  //
+  //  Eight read-only helpers for tier-aware UI gating. Frontend MUST go
+  //  through these — NEVER read raw subscription fields directly. Centralizing
+  //  here prevents truth-table drift and field-name coupling across the app.
+  //
+  //  V24 = read-only. V25 adds Stripe Checkout, V26 adds webhook + founder
+  //  counter, V27 adds the one-time grace migration. Helpers compose against
+  //  the existing data-listener path so they're reactive automatically — no
+  //  polling needed in Frontend.
+
+  /**
+   * Subscribe to subscription object changes. Fires immediately with current
+   * value (or null if no sub field). Returns unsubscribe function.
+   */
+  subscribeSubscription(cb) {
+    const wrap = (d) => { try { cb((d && d.subscription) || null); } catch { } };
+    dataListeners.add(wrap);
+    queueMicrotask(() => wrap(currentDocData));
+    return () => dataListeners.delete(wrap);
+  },
+
+  /**
+   * The single source of truth for tier-aware UI. Returns 'pro' | 'premium'
+   * | null. Synchronous; reads from currentDocData.subscription.
+   * Use this for ALL feature gating.
+   */
+  getEffectiveTier() {
+    return computeEffectiveTier(currentDocData.subscription);
+  },
+
+  /**
+   * App-level access gate. Returns true if the user should see the app at
+   * all, false if they should be hard-paywalled.
+   */
+  canAccessApp() {
+    return computeEffectiveTier(currentDocData.subscription) !== null;
+  },
+
+  /**
+   * True if the user is currently in their 7-day trial AND the trial hasn't
+   * expired yet. False after Day 7 even if status field still says 'trial'
+   * (B1 soft-expiry — see §5b).
+   */
+  isInTrial() {
+    const sub = currentDocData.subscription;
+    if (!sub || sub.status !== "trial") return false;
+    const ends = tsMillis(sub.trialEndDate);
+    return ends === null || ends > Date.now();
+  },
+
+  /**
+   * Days remaining in the 7-day trial. Returns int (can be negative if the
+   * trial has expired but webhook hasn't transitioned status yet — V25/V26).
+   * Returns null if the user is not in trial state.
+   */
+  getTrialDaysLeft() {
+    const sub = currentDocData.subscription;
+    if (!sub || sub.status !== "trial") return null;
+    const ends = tsMillis(sub.trialEndDate);
+    if (ends === null) return null;
+    return Math.ceil((ends - Date.now()) / MS_PER_DAY);
+  },
+
+  /**
+   * Days remaining in grace period (either V20 14-day welcome OR cancel-grace).
+   * Returns int (can be negative briefly during transition windows).
+   * Returns null if the user is not in any grace state.
+   */
+  getDaysLeftInGrace() {
+    const sub = currentDocData.subscription;
+    if (!sub) return null;
+    const inGrace = sub.status === "grace" || sub.comp === "grace14_v20";
+    if (!inGrace) return null;
+    const ends = tsMillis(sub.gracePeriodEndDate);
+    if (ends === null) return null;
+    return Math.ceil((ends - Date.now()) / MS_PER_DAY);
+  },
+
+  /**
+   * Visual badge type for the current user.
+   *   'lifetime' — one of the 5 named comp testers
+   *   'founder'  — among the first 200 paying users (set by V26 webhook)
+   *   null       — neither
+   * Lifetime takes precedence over founder if both are somehow true.
+   */
+  getBadgeType() {
+    const sub = currentDocData.subscription;
+    if (!sub) return null;
+    if (sub.isLifetime) return "lifetime";
+    if (sub.isFounder) return "founder";
+    return null;
+  },
+
+  /**
+   * Live count of founder slots claimed (out of 200).
+   * V25.2: real implementation — fetches /founderCount from the Worker.
+   * Returns null if the Worker isn't configured yet OR the request fails;
+   * callers (notably getTierPricing) treat null as "founder available" so
+   * the UI never blocks on an unreachable Worker.
+   */
+  async getFounderCount() {
+    if (!workerConfigured()) return null;
+    try {
+      const res = await fetch(`${WORKER_URL}/founderCount`);
+      if (!res.ok) return null;
+      const data = await res.json();
+      return (typeof data.count === "number") ? data.count : null;
+    } catch {
+      return null;
+    }
+  },
+
+  /**
+   * Founder-aware tier pricing. Reads founderCount and maps to THB prices.
+   * Returns { premium, pro, founderAvailable }. Defensive default: when
+   * count is unknown (Worker not deployed yet, or fetch failed), returns
+   * founder pricing — V25 dev/test stays smooth before real Worker is live.
+   *
+   *   { premium: 99,  pro: 199, founderAvailable: true  }   — first 200 paying users
+   *   { premium: 199, pro: 299, founderAvailable: false }   — post-founder pricing
+   */
+  async getTierPricing() {
+    const count = await groundedSync.getFounderCount();
+    const founderAvailable = (count === null) || (count < 200);
+    return {
+      premium:           founderAvailable ? 99  : 199,
+      pro:               founderAvailable ? 199 : 299,
+      founderAvailable,
+    };
+  },
+
+  /**
+   * Start a Stripe Checkout flow for the given tier. Redirects via
+   * window.location.href on success. Returns { ok: false, code } on any
+   * failure (no redirect happens then — caller can show an error toast).
+   *
+   * The Worker is the source-of-truth for the Price ID actually attached
+   * to the Stripe sub. If founderCount races past 200 between getTierPricing
+   * and this call, the Worker may use the standard Price ID and return that
+   * in `pricing`. UI should reconcile after the success redirect.
+   *
+   *   tier:  'premium' | 'pro'
+   *   opts:  { successUrl, cancelUrl }  — explicit absolute URLs (recommended)
+   *          OR { returnPath: '/path' } — helper derives successUrl + cancelUrl
+   *                                       by appending ?checkout=success / cancel
+   *          OR omitted                — defaults to parnmada-ux.github.io/grounded
+   */
+  async startCheckout(tier, opts) {
+    if (tier !== "premium" && tier !== "pro") {
+      return { ok: false, code: "invalid-tier" };
+    }
+    if (!currentUser)         return { ok: false, code: "no-user" };
+    if (!workerConfigured())  return { ok: false, code: "worker-not-configured" };
+
+    // Resolve successUrl + cancelUrl from the various opts shapes
+    let successUrl, cancelUrl;
+    if (opts && typeof opts === "object") {
+      successUrl = opts.successUrl;
+      cancelUrl  = opts.cancelUrl;
+      if (!successUrl || !cancelUrl) {
+        const base = opts.returnPath || "https://parnmada-ux.github.io/grounded";
+        const sep  = base.includes("?") ? "&" : "?";
+        successUrl = successUrl || `${base}${sep}checkout=success`;
+        cancelUrl  = cancelUrl  || `${base}${sep}checkout=cancel`;
+      }
+    } else {
+      const base = "https://parnmada-ux.github.io/grounded";
+      successUrl = `${base}?checkout=success`;
+      cancelUrl  = `${base}?checkout=cancel`;
+    }
+
+    let token;
+    try { token = await currentUser.getIdToken(); }
+    catch (e) { return { ok: false, code: "token-failed", error: e.message }; }
+
+    try {
+      const res = await fetch(`${WORKER_URL}/createCheckoutSession`, {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ tier, successUrl, cancelUrl }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        return { ok: false, code: data.code || "http-error", error: data.error };
+      }
+      // Optimistic flush of any pending debounced save before redirect — we're
+      // about to leave the page; let local state land on Firestore first.
+      try { await groundedSync.flush(); } catch {}
+      // Redirect to Stripe Checkout
+      window.location.href = data.url;
+      return { ok: true, sessionId: data.sessionId, pricing: data.pricing };
+    } catch (e) {
+      return { ok: false, code: "fetch-failed", error: e.message };
+    }
+  },
+
+  /**
+   * Open the Stripe Customer Portal so the user can manage their subscription
+   * (update card, cancel, view invoices). Stripe-hosted UI. Redirects via
+   * window.location.href on success.
+   *
+   *   opts:  { returnUrl: 'https://...' }  — absolute URL (recommended)
+   *          OR { returnPath: '/path' }    — helper resolves to absolute
+   *          OR omitted                    — defaults to parnmada-ux.github.io/grounded
+   *
+   *   404 'no-subscription' means user has no Stripe customer record yet
+   *   (they've never completed Checkout).
+   */
+  async openCustomerPortal(opts) {
+    if (!currentUser)         return { ok: false, code: "no-user" };
+    if (!workerConfigured())  return { ok: false, code: "worker-not-configured" };
+
+    let returnUrl;
+    if (opts && typeof opts === "object") {
+      returnUrl = opts.returnUrl || opts.returnPath || "https://parnmada-ux.github.io/grounded";
+    } else if (typeof opts === "string") {
+      returnUrl = opts;
+    } else {
+      returnUrl = "https://parnmada-ux.github.io/grounded";
+    }
+
+    let token;
+    try { token = await currentUser.getIdToken(); }
+    catch (e) { return { ok: false, code: "token-failed", error: e.message }; }
+
+    try {
+      const res = await fetch(`${WORKER_URL}/createPortalSession`, {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ returnUrl }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        return { ok: false, code: data.code || "http-error", error: data.error };
+      }
+      try { await groundedSync.flush(); } catch {}
+      window.location.href = data.url;
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, code: "fetch-failed", error: e.message };
+    }
   },
 
   // ── DELETE HELPERS (Bug 15 / V19) ─────────────────────────────────────────
