@@ -3442,7 +3442,14 @@
         }
         setPortalPending(true);
         try {
-          const returnUrl = window.location.origin + '/?portal=return';
+          // V49 hotfix: window.location.origin strips the /grounded/ subdir
+          // (deployed at parnmada-ux.github.io/grounded/). Derive baseUrl from
+          // origin + pathname-without-last-segment so the redirect lands inside
+          // the subdir. Regex /\/[^/]*$/ strips the trailing file ("index.html"
+          // or "grounded PWA V49.html") if present, keeps directory path intact.
+          // Works for GitHub Pages subdir, custom domain root, and file:// dev.
+          const baseUrl = window.location.origin + window.location.pathname.replace(/\/[^/]*$/, '/');
+          const returnUrl = baseUrl + '?portal=return';
           const result = await sync.openCustomerPortal({ returnUrl });
           if (result && result.url) {
             window.location.href = result.url;
@@ -6281,8 +6288,12 @@
                 return 'Stripe Checkout ships next update';
               }
               try {
-                const successUrl = window.location.origin + '/?checkout=success';
-                const cancelUrl  = window.location.origin + '/?checkout=cancel';
+                // V49 hotfix: preserve /grounded/ subdir via baseUrl derivation
+                // (same regex as Customer Portal returnUrl above — strips trailing
+                // file segment, keeps directory). Both URLs share baseUrl.
+                const baseUrl = window.location.origin + window.location.pathname.replace(/\/[^/]*$/, '/');
+                const successUrl = baseUrl + '?checkout=success';
+                const cancelUrl  = baseUrl + '?checkout=cancel';
                 const result = await _sync.startCheckout(tier, { successUrl, cancelUrl });
                 if (result && result.url) {
                   window.location.href = result.url;
