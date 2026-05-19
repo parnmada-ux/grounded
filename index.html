@@ -1,4 +1,22 @@
 <!--
+  V49.1 — May 19, 2026
+  Pre-launch batch (11 fixes, single ship):
+  CRITICAL:
+    #1 Data preservation — mirrorBaselineDate is canonical "fully onboarded" signal in resolveInitialScreen; defensive top-level guard redirects signed-in existing users off onboarding routes (Backend coordination still needed for merge:true writes in firebase.js — flagged)
+    #2 Sign-in → Home for existing users (Fix #1 routing change handles this)
+    #3 Trial Welcome on all 3 paths — anon (already worked), email signup (new), Google signup (new). localStorage flag 'grounded_show_trial_welcome' set on signup success, consumed in hydration watcher. Existing-user signin clears flag without showing TW.
+    #4 Sign-in race — explicit poll for groundedAuth.currentUser (≤5s) after signIn/signUp success
+  IMPORTANT:
+    #5 409 already_subscribed handler — modal with portal redirect
+    #6 /changePlan wiring — Upgrade (Premium→Pro, no friction) + Downgrade (Pro→Premium, friction)
+    #7 Downgrade friction modal — default focus on "Keep my Pro plan"; Pro Founder warning when applicable
+    #8 Pro card Founder pricing hidden publicly — Pro always shows 299
+    #9 Founder spots wording — "Premium Founder: N of 200 spots left" / "Premium Founder spots have all been claimed."
+   #10 founderSlotsExhausted notice modal — proceeds to Stripe at Standard price
+   #11 "Ask about Pro Founder pricing" mailto link — Premium-only visibility
+  DEFERRED to V50: hasSeenTrialWelcome enforcement, banner dismiss-X, decision-helper UX, FAQ link, Practice roadmap
+  See: Grounded_Business Plan/Dispatch_Frontend_V49.1.md (if exists) or chat history May 19
+
   V49 — May 14, 2026
   M2 Stripe wiring:
     - Tier-pick screen → groundedSync.startCheckout({successUrl, cancelUrl}) → window.location.href
@@ -1126,7 +1144,23 @@
             setPending(false);
             return;
           }
-          // On success: A3+J1 listener fires → routes to 'values'. Component unmounts.
+          // V49.1 Fix #3: signal that post-auth router should show Trial Welcome
+          // (this is the email signup path — Path 2). Consumed in hydration watcher.
+          try { localStorage.setItem('grounded_show_trial_welcome', '1'); } catch (e) {}
+          // V49.1 Fix #4: explicit wait for groundedAuth.currentUser before
+          // signaling done. Defensive against the race where A3 listener
+          // attaches mid-flight and misses the auth event on first attempt.
+          const _waitStart = Date.now();
+          while (Date.now() - _waitStart < 5000) {
+            if (groundedAuth.currentUser) break;
+            await new Promise(r => setTimeout(r, 50));
+          }
+          if (!groundedAuth.currentUser) {
+            setError('Sign up is taking longer than usual, please try again.');
+            setPending(false);
+            return;
+          }
+          // On success: A3+J1 listener fires → routes per Fix #2/#3. Component unmounts.
           if (onSubmitted) onSubmitted();
           // Defensive: clear pending in case the listener is delayed (e.g., backend
           // ack arrives but auth-state event lags). Component will unmount on route,
@@ -1302,11 +1336,23 @@
             setPending(false);
             return;
           }
-          // On success: A3+J1 listener fires → routes to home/values. Component unmounts.
+          // V49.1 Fix #4: explicit wait for groundedAuth.currentUser before
+          // signaling done. Defensive against the race where A3 listener
+          // attaches mid-flight and misses the auth event on first attempt
+          // (user observes "Sign In does nothing, refresh and retry works").
+          const _waitStart = Date.now();
+          while (Date.now() - _waitStart < 5000) {
+            if (groundedAuth.currentUser) break;
+            await new Promise(r => setTimeout(r, 50));
+          }
+          if (!groundedAuth.currentUser) {
+            setError('Sign in is taking longer than usual, please try again.');
+            setPending(false);
+            return;
+          }
+          // On success: A3+J1 listener fires → routes per Fix #2 (home for
+          // existing users, never onboarding). Component unmounts.
           if (onSubmitted) onSubmitted();
-          // Defensive: clear pending in case the listener is delayed (e.g., backend
-          // ack arrives but auth-state event lags). Component will unmount on route,
-          // so this is mostly preventive — React 18 silently no-ops on unmounted.
           setPending(false);
         } catch (e) {
           console.error('[C2] signInWithEmail threw:', e);
@@ -3392,7 +3438,7 @@
       </ul>
     );
 
-    const SubscriptionSettingsScreen = ({ subState, sync, onTierPick, onBack, onHome }) => {
+    const SubscriptionSettingsScreen = ({ subState, sync, onTierPick, onBack, onHome, onDowngradeRequest }) => {
       const [notice, setNotice] = useState(null);
       const flashNotice = (msg) => { setNotice(msg); setTimeout(() => setNotice(null), 3000); };
 
@@ -3543,6 +3589,79 @@
                 {portalPending ? 'Opening…' : 'Manage subscription'}
               </PillButton>
             </div>
+            {/* V49.1 Fix #6: Upgrade/Downgrade buttons. Premium → Pro is
+                no-friction (single confirm + changePlan call). Pro → Premium
+                goes through friction modal (Fix #7) before changePlan. */}
+            {!isLifetime && (
+              <div className="mt-4 flex justify-center">
+                {subState.tier === 'premium' ? (
+                  <button
+                    onClick={() => {
+                      if (!sync || typeof sync.changePlan !== 'function') {
+                        flashNotice('Plan changes ship next update');
+                        return;
+                      }
+                      if (window.confirm('Upgrade to Pro? You\'ll be charged the difference for the current billing period.')) {
+                        sync.changePlan('pro_standard')
+                          .then(() => flashNotice('Upgrade requested — refreshing…'))
+                          .catch(e => {
+                            console.warn('[V49.1/Fix6] changePlan threw:', e);
+                            flashNotice('Could not upgrade — please try again.');
+                          });
+                      }
+                    }}
+                    className="text-g-deep text-sm underline font-semibold">
+                    Upgrade to Pro
+                  </button>
+                ) : subState.tier === 'pro' ? (
+                  <button
+                    onClick={() => {
+                      if (typeof onDowngradeRequest === 'function') {
+                        onDowngradeRequest({
+                          isProFounder: !!subState.isFounder,
+                          onConfirm: () => {
+                            if (!sync || typeof sync.changePlan !== 'function') {
+                              flashNotice('Plan changes ship next update');
+                              return;
+                            }
+                            sync.changePlan('premium_standard', { acknowledgeDowngrade: true })
+                              .then(() => flashNotice('Downgrade requested — refreshing…'))
+                              .catch(e => {
+                                console.warn('[V49.1/Fix6] changePlan threw:', e);
+                                flashNotice('Could not downgrade — please try again.');
+                              });
+                          }
+                        });
+                      }
+                    }}
+                    className="text-g-gray text-sm underline">
+                    Downgrade to Premium
+                  </button>
+                ) : null}
+              </div>
+            )}
+            {/* V49.1 Fix #11: "Ask about Pro Founder pricing" mailto link.
+                Visible only to active Premium subscribers (NOT Pro, NOT non-subs).
+                Pro Founder pricing is request-only — no public hint of 199 THB Pro. */}
+            {subState.tier === 'premium' && (status === 'active' || status === 'trialing' || status === 'grace') && (
+              <div className="mt-6 text-center">
+                <a
+                  href={'mailto:parnparnmada@gmail.com'
+                    + '?subject=' + encodeURIComponent('Pro Founder pricing request')
+                    + '&body=' + encodeURIComponent(
+                      "Hi Parn,\n\n"
+                      + "I'm currently a Premium subscriber and I'd love to upgrade to Pro at founder pricing.\n\n"
+                      + "Here's a bit about me and how I'd use Pro features:\n"
+                      + "[your answer here]\n\n"
+                      + "Thanks!"
+                    )
+                  }
+                  className="text-[12px] underline"
+                  style={{ color: '#888888' }}>
+                  Want Pro features at a special price? Ask about Pro Founder pricing →
+                </a>
+              </div>
+            )}
           </>
         );
       }
@@ -5127,7 +5246,7 @@
                   fontWeight: 500,
                   letterSpacing: '0.01em',
                 }}>
-                  Founder spots remaining: {founderLeft} / {founderTotal}
+                  Premium Founder: {founderLeft} of {founderTotal} spots left
                 </span>
               </div>
             )}
@@ -5142,7 +5261,7 @@
                   fontWeight: 500,
                   letterSpacing: '0.01em',
                 }}>
-                  Founder cohort filled — standard pricing
+                  Premium Founder spots have all been claimed.
                 </span>
               </div>
             )}
@@ -5193,13 +5312,11 @@
                 letterSpacing: '0.005em', lineHeight: 1.1,
               }}>Pro</h3>
               {/* V32: V5 sandbox style — same stacked layout as Premium card */}
-              {showFounder && (
-                <p className="mt-1 line-through text-g-gray text-[12.5px] font-normal leading-tight">
-                  {PRO_STANDARD} THB
-                </p>
-              )}
-              <p className={`text-g-charcoal text-[18px] font-semibold tracking-tight ${showFounder ? 'mt-0.5' : 'mt-1'}`}>
-                {proPrice} THB <span className="text-g-gray text-[14px] font-medium">/ month</span>
+              {/* V49.1 Fix #8: Pro Founder pricing is REQUEST-ONLY (mailto in
+                  Settings). Public Pro card always shows Standard 299 — never
+                  shows strikethrough, never advertises 199 publicly. */}
+              <p className="mt-1 text-g-charcoal text-[18px] font-semibold tracking-tight">
+                {PRO_STANDARD} THB <span className="text-g-gray text-[14px] font-medium">/ month</span>
               </p>
               <p className="mt-4 text-g-charcoal text-[14px] leading-relaxed">Premium, plus:</p>
               <ul className="mt-2 space-y-1.5">
@@ -5343,6 +5460,12 @@
 
       // V25/Phase2: Have-a-code modal toggle (opened from Trial Welcome).
       const [showRedeemModal, setShowRedeemModal] = useState(false);
+      // V49.1 Fix #5: 409 already_subscribed modal state — { currentTier, portalUrl }
+      const [alreadySubscribedModal, setAlreadySubscribedModal] = useState(null);
+      // V49.1 Fix #10: founder slots exhausted modal — { url } (Stripe Checkout URL to continue)
+      const [founderExhaustedModal, setFounderExhaustedModal] = useState(null);
+      // V49.1 Fix #7: downgrade friction modal state — { isProFounder } or null
+      const [downgradeModal, setDowngradeModal] = useState(null);
 
       // V25/Phase2: ref to groundedSync for RedeemCodeModal — passes through
       // groundedApi mutations across re-renders without prop drilling.
@@ -5404,8 +5527,14 @@
       function resolveInitialScreen({ user, data: d }) {
         const hasTopValues  = !!(d && d.topValues  && d.topValues.length);
         const hasFiveValues = !!(d && d.fiveValues && d.fiveValues.length);
+        // V49.1 Fix #1+#2: mirrorBaselineDate is the canonical "fully onboarded"
+        // signal. If present in Firestore data, user is existing — route to
+        // home regardless of in-flight topValues/fiveValues state. This catches
+        // the catastrophic cache-clear regression where existing users were
+        // routed through onboarding and had their Firestore docs overwritten.
+        const hasMirrorBaseline = !!(d && d.mirrorBaselineDate);
         if (user) {
-          if (hasTopValues)  return 'home';
+          if (hasMirrorBaseline || hasTopValues) return 'home';
           if (hasFiveValues) return 'top3';   // resume: picked 5 but not 3 (skip Promise — already past it)
           return 'promise';                   // V15/Bug7: soft entry — read context cards before values picker
         }
@@ -5578,6 +5707,20 @@
           }
         } catch (e) {}
 
+        // V49.1 Fix #3: post-signup Trial Welcome (email + Google paths).
+        // Flag set in SignUp success branch and Google sign-in handler.
+        // Skip for existing users — if mirrorBaselineDate is set, they're
+        // returning, not new — clear flag without showing TW.
+        try {
+          if (user && localStorage.getItem('grounded_show_trial_welcome') === '1') {
+            localStorage.removeItem('grounded_show_trial_welcome');
+            const _isExistingUser = !!(liveData && liveData.mirrorBaselineDate);
+            if (!_isExistingUser && PHASE_2_TRIAL_UI_ENABLED) {
+              next = 'trial_welcome';
+            }
+          }
+        } catch (e) {}
+
         setScreen(next);
         setAwaitingHydration(false);
         setAuthResolved(true);
@@ -5602,6 +5745,17 @@
             if (user && localStorage.getItem('grounded_from_trial_welcome') === '1') {
               localStorage.removeItem('grounded_from_trial_welcome');
               next = 'mirror_ready';
+            }
+          } catch (e) {}
+
+          // V49.1 Fix #3: same TW flag handling on backstop path
+          try {
+            if (user && localStorage.getItem('grounded_show_trial_welcome') === '1') {
+              localStorage.removeItem('grounded_show_trial_welcome');
+              const _isExistingUser = !!(liveData && liveData.mirrorBaselineDate);
+              if (!_isExistingUser && PHASE_2_TRIAL_UI_ENABLED) {
+                next = 'trial_welcome';
+              }
             }
           } catch (e) {}
 
@@ -6065,7 +6219,20 @@
         if (_isTrialExpired) return { to: 'tier_pick', forcedChoice: true };
         return { to: 'subscription', forcedChoice: false };
       })();
-      const effectiveScreen = _gateRedirect ? _gateRedirect.to : screen;
+      // V49.1 Fix #1+#2: defensive onboarding guard. If a signed-in user with
+      // a Firestore mirrorBaselineDate ever lands on an onboarding route (via
+      // race condition, stale routing decision, or any other path), force them
+      // to home. This is the last-line defense against the catastrophic data
+      // overwrite — even if upstream routing fails, no onboarding screen renders
+      // for existing users.
+      const _ONBOARDING_ROUTES = ['promise', 'values', 'top3', 'comfort', 'aligned_self', 'no_worries', 'thats_okay', 'no_pressure'];
+      const _userHasBaseline = !!(data && data.mirrorBaselineDate);
+      let _preGateScreen = screen;
+      if (_hasUser && _userHasBaseline && _ONBOARDING_ROUTES.indexOf(screen) !== -1) {
+        console.warn('[V49.1/Fix1+2] Existing user routed to onboarding screen "' + screen + '" — redirecting to home');
+        _preGateScreen = 'home';
+      }
+      const effectiveScreen = _gateRedirect ? _gateRedirect.to : _preGateScreen;
       const _forcedTierPick = !!(_gateRedirect && _gateRedirect.forcedChoice);
 
       let view = null;
@@ -6075,7 +6242,18 @@
             hasGoogleAuth={!!groundedApi}
             onGoogle={async () => {
               if (!groundedApi || !groundedApi.groundedAuth) return { ok: false, code: 'no-auth' };
-              return groundedApi.groundedAuth.signInWithGoogle();
+              // V49.1 Fix #3: signal post-auth TW for Google signup path (Path 3).
+              // Consumed in hydration watcher. Set BEFORE the call so that if
+              // signInWithGoogle resolves synchronously via popup, the flag is
+              // present when the auth listener fires.
+              try { localStorage.setItem('grounded_show_trial_welcome', '1'); } catch (e) {}
+              const r = await groundedApi.groundedAuth.signInWithGoogle();
+              // If Google sign-in was cancelled or failed, clear the flag so
+              // it doesn't fire on a future successful sign-in.
+              if (!r || !r.ok) {
+                try { localStorage.removeItem('grounded_show_trial_welcome'); } catch (e) {}
+              }
+              return r;
             }}
             onSignUpEmail={() => go('signup')}
             onSignIn={() => go('signin')}
@@ -6229,14 +6407,15 @@
             onContinue={() => {
               // V29: Anon → signup, set TW flag so post-auth gate routes through
               // MirrorReady celebration (consumed in hydration watcher/backstop).
-              // Already signed-in edge case (rare — late prompt) → home, trial
-              // running, no flag needed since no auth roundtrip.
+              // V49.1 Fix #3: signed-in user with no Mirror baseline → Mirror
+              // onboarding (Promise → Values → ...). Existing user → home.
               const isAnon = !(groundedApi && groundedApi.groundedAuth && groundedApi.groundedAuth.currentUser);
               if (isAnon) {
                 try { localStorage.setItem('grounded_from_trial_welcome', '1'); } catch (e) {}
                 go('signup');
               } else {
-                go('home');
+                const hasBaseline = !!(data && (data.mirrorBaselineDate || (data.topValues && data.topValues.length)));
+                go(hasBaseline ? 'home' : 'promise');
               }
             }}
             onHaveCode={() => setShowRedeemModal(true)}
@@ -6309,6 +6488,23 @@
                 const successUrl = baseUrl + '?checkout=success';
                 const cancelUrl  = baseUrl + '?checkout=cancel';
                 const result = await _sync.startCheckout(tier, { successUrl, cancelUrl });
+                // V49.1 Fix #5: 409 already_subscribed — Backend v26.0 returns
+                // { error: 'already_subscribed', currentTier, portalUrl } when
+                // user has active sub. Show modal with portal redirect option.
+                if (result && result.error === 'already_subscribed') {
+                  setAlreadySubscribedModal({
+                    currentTier: result.currentTier || 'premium',
+                    portalUrl: result.portalUrl || null,
+                  });
+                  return null;
+                }
+                // V49.1 Fix #10: founderSlotsExhausted — Backend signals when
+                // user clicked Premium but founder cap was hit mid-flight.
+                // Show notice modal, then proceed to Stripe at Standard price.
+                if (result && result.founderSlotsExhausted && result.url) {
+                  setFounderExhaustedModal({ url: result.url });
+                  return null;  // modal owns the navigation
+                }
                 if (result && result.url) {
                   window.location.href = result.url;
                   return null;  // navigation handled
@@ -6351,6 +6547,7 @@
             onTierPick={() => go('tier_pick')}
             onBack={() => go('settings')}
             onHome={() => go('settings')}
+            onDowngradeRequest={(payload) => setDowngradeModal(payload)}
           />; break;
         case 'premium':
           // V38: legacy alias — old 'premium' route redirected to 'subscription'.
@@ -6364,6 +6561,7 @@
             onTierPick={() => go('tier_pick')}
             onBack={() => go('settings')}
             onHome={() => go('settings')}
+            onDowngradeRequest={(payload) => setDowngradeModal(payload)}
           />; break;
         case 'paywall':
           // V38: paywall route preserved as defensive fallback. Gate now redirects
@@ -6610,7 +6808,18 @@
             hasGoogleAuth={!!groundedApi}
             onGoogle={async () => {
               if (!groundedApi || !groundedApi.groundedAuth) return { ok: false, code: 'no-auth' };
-              return groundedApi.groundedAuth.signInWithGoogle();
+              // V49.1 Fix #3: signal post-auth TW for Google signup path (Path 3).
+              // Consumed in hydration watcher. Set BEFORE the call so that if
+              // signInWithGoogle resolves synchronously via popup, the flag is
+              // present when the auth listener fires.
+              try { localStorage.setItem('grounded_show_trial_welcome', '1'); } catch (e) {}
+              const r = await groundedApi.groundedAuth.signInWithGoogle();
+              // If Google sign-in was cancelled or failed, clear the flag so
+              // it doesn't fire on a future successful sign-in.
+              if (!r || !r.ok) {
+                try { localStorage.removeItem('grounded_show_trial_welcome'); } catch (e) {}
+              }
+              return r;
             }}
             onSignUpEmail={() => go('signup')}
             onSignIn={() => go('signin')}
@@ -6725,6 +6934,96 @@
                 }
               }}
             />
+          )}
+          {/* V49.1 Fix #5: 409 already_subscribed modal — surfaces when user
+              taps Subscribe but already has active subscription. Offers Stripe
+              Customer Portal redirect to manage existing plan. */}
+          {alreadySubscribedModal && (
+            <div className="absolute inset-0 z-50 flex items-center justify-center px-6 fade-in"
+                 style={{ backgroundColor: 'rgba(61, 94, 76, 0.6)' }}
+                 onClick={() => setAlreadySubscribedModal(null)}
+                 role="dialog" aria-modal="true">
+              <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-xl"
+                   onClick={(e) => e.stopPropagation()}>
+                <h3 className="font-serif font-semibold text-[22px] text-g-deep mb-3">You're already subscribed</h3>
+                <p className="text-g-charcoal text-[14px] leading-relaxed mb-5">
+                  You have an active {alreadySubscribedModal.currentTier === 'pro' ? 'Pro' : 'Premium'} subscription.
+                  You can manage your plan, payment, or cancel from your subscription portal.
+                </p>
+                <div className="flex flex-col items-center gap-3">
+                  <PillButton onClick={() => {
+                    if (alreadySubscribedModal.portalUrl) {
+                      window.location.href = alreadySubscribedModal.portalUrl;
+                    } else {
+                      setAlreadySubscribedModal(null);
+                      go('subscription');
+                    }
+                  }}>Manage subscription</PillButton>
+                  <button onClick={() => setAlreadySubscribedModal(null)}
+                    className="text-g-gray text-sm underline">Cancel</button>
+                </div>
+              </div>
+            </div>
+          )}
+          {/* V49.1 Fix #10: founder slots exhausted modal — surfaces when user
+              tapped Premium but cohort just hit 200. Notifies of Standard
+              pricing, lets them continue to checkout or back out. */}
+          {founderExhaustedModal && (
+            <div className="absolute inset-0 z-50 flex items-center justify-center px-6 fade-in"
+                 style={{ backgroundColor: 'rgba(61, 94, 76, 0.6)' }}
+                 onClick={() => setFounderExhaustedModal(null)}
+                 role="dialog" aria-modal="true">
+              <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-xl"
+                   onClick={(e) => e.stopPropagation()}>
+                <h3 className="font-serif font-semibold text-[22px] text-g-deep mb-3">Founder spots just filled</h3>
+                <p className="text-g-charcoal text-[14px] leading-relaxed mb-5">
+                  All 200 Premium Founder spots are now taken. You'll proceed at Premium Standard pricing —
+                  199 THB per month. Your trial still applies.
+                </p>
+                <div className="flex flex-col items-center gap-3">
+                  <PillButton onClick={() => {
+                    const url = founderExhaustedModal.url;
+                    setFounderExhaustedModal(null);
+                    if (url) window.location.href = url;
+                  }}>Continue to checkout</PillButton>
+                  <button onClick={() => setFounderExhaustedModal(null)}
+                    className="text-g-gray text-sm underline">Maybe later</button>
+                </div>
+              </div>
+            </div>
+          )}
+          {/* V49.1 Fix #7: downgrade friction modal — Pro → Premium requires
+              acknowledgment. Pro Founder users see extra "leave Founder Program
+              permanently" warning. Primary CTA defaults to "Keep my Pro plan"
+              (accidental Enter/click cancels the downgrade). */}
+          {downgradeModal && (
+            <div className="absolute inset-0 z-50 flex items-center justify-center px-6 fade-in"
+                 style={{ backgroundColor: 'rgba(61, 94, 76, 0.6)' }}
+                 role="dialog" aria-modal="true">
+              <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-xl">
+                <h3 className="font-serif font-semibold text-[22px] text-g-deep mb-3">Before you downgrade to Premium...</h3>
+                <p className="text-g-charcoal text-[14px] leading-relaxed mb-2">You'll lose access to:</p>
+                <ul className="text-g-charcoal text-[14px] leading-relaxed mb-4 pl-2 space-y-1">
+                  <li>— Edit past entries (30 days back)</li>
+                  <li>— Up to 10 weekly missions</li>
+                  <li>— Community (when available)</li>
+                  <li>— AI insights (when available)</li>
+                </ul>
+                {downgradeModal.isProFounder && (
+                  <p className="text-g-charcoal text-[14px] leading-relaxed italic mb-5" style={{ color: '#3D5E4C' }}>
+                    You'll also leave the Founder Program permanently. If you ever return to Pro, it will be at standard price (299 THB instead of 199 THB).
+                  </p>
+                )}
+                <div className="flex flex-col items-center gap-3 mt-2">
+                  <PillButton onClick={() => setDowngradeModal(null)}>Keep my Pro plan</PillButton>
+                  <button onClick={() => {
+                    const opts = downgradeModal.onConfirm;
+                    setDowngradeModal(null);
+                    if (typeof opts === 'function') opts();
+                  }} className="text-g-gray text-sm underline">I understand — downgrade me</button>
+                </div>
+              </div>
+            </div>
           )}
           {isDev && showDev && (
             <div className="fixed bottom-2 right-2 bg-white/95 backdrop-blur rounded-xl shadow-lg p-2 text-[10px] text-g-gray border border-gray-100 z-50" style={{maxWidth: 240}}>
