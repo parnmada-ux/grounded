@@ -227,9 +227,11 @@ function defaultTrialSubscription() {
   return {
     status: "trial",
     tier: null,
+    lookupKey: null,              // v26.0 — Stripe Price lookup_key (premium_founder etc.)
     lockedRate: null,
     isFounder: false,
     founderNumber: null,
+    founderStatusForfeited: false,// v26.0 — set true on downgrade away from founder tier
     isLifetime: false,
     comp: null,
     stripeCustomerId: null,
@@ -237,11 +239,14 @@ function defaultTrialSubscription() {
     pricingPlanId: null,
     trialStartDate: serverTimestamp(),
     trialEndDate: Timestamp.fromDate(new Date(Date.now() + TRIAL_DAYS * MS_PER_DAY)),
-    paidStartAt: null,            // set by M3 webhook on first invoice.payment_succeeded
+    paidStartAt: null,            // set by webhook on first invoice.payment_succeeded
     currentPeriodEnd: null,
     cancelAtPeriodEnd: false,
+    cancelledAt: null,            // v26.0 — set by webhook on customer.subscription.deleted
+    lastPaymentAt: null,          // v26.0 — set by webhook on invoice.payment_succeeded
+    lastPaymentFailedAt: null,    // v26.0 — set by webhook on invoice.payment_failed
     gracePeriodEndDate: null,
-    lastWebhookEventId: null,     // M3 webhook idempotency key — last Stripe event ID applied
+    lastWebhookEventId: null,     // webhook idempotency key — last Stripe event ID applied
     pricingHistory: [],
   };
 }
@@ -333,68 +338,127 @@ function mergeForMigration(local, remote) {
   return out;
 }
 
+// ─── v26.1 — Data preservation hotfix ───────────────────────────────────────
+//
+// Bug discovered May 19, 2026: an existing onboarded user cleared their
+// browser cache, signed back in, and had their Firestore doc REPLACED with
+// a fresh trial-state payload. Root cause: Cases A and C used setDoc WITHOUT
+// merge:true (full document REPLACE), and `getDoc` returned null erroneously
+// from the stale IndexedDB cache, so Case A/C fired for an existing user.
+//
+// Three-layer defense added in v26.1:
+//
+//   LAYER C — Data preservation guard:
+//     If remote.mirrorBaselineDate is set, the user is fully onboarded.
+//     ABORT all writes. No light-touch update, no merge — pure no-op return.
+//     This is the explicit guard Parn's dispatch requested.
+//
+//   LAYER B — merge:true on Cases A/C:
+//     Defense-in-depth so that even if Layer C is bypassed, the writes
+//     can't replace an existing document, only update specified fields.
+//
+//   LAYER D — Wrap in runTransaction:
+//     tx.get() reads with strong server consistency (not cache), and tx.set()
+//     commits atomically. Eliminates the cache-race that triggered the bug.
+//     If state changes during the transaction, Firestore retries the callback.
+//
 async function ensureUserDocAndMigrate(user) {
   const userRef = doc(db, "users", user.uid);
-  const snap = await getDoc(userRef);
-  const remote = snap.exists() ? snap.data() : null;
+
+  // Capture localStorage state outside the transaction (won't change during txn)
   const local = loadAnonData();
   const hasLocal = Object.keys(local).length > 0;
 
-  // System fields we always set/keep.
+  // Auth-derived fields (computed once)
   const baseUser = {
-    email: user.email || "",
+    email:       user.email || "",
     displayName: user.displayName || "",
-    photoURL: user.photoURL || "",
-    providers: user.providerData.map(p => p.providerId),
+    photoURL:    user.photoURL || "",
+    providers:   user.providerData.map(p => p.providerId),
   };
 
-  // ── Case C: brand-new user, nothing to migrate
-  if (!remote && !hasLocal) {
-    await setDoc(userRef, clean({
-      schemaVersion: 1,
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-      migratedFromLocalStorage: false,
-      user: baseUser,
-      subscription: defaultTrialSubscription(),     // V24: 7-day trial begins now
-    }));
-    return { migrated: false, source: "fresh" };
+  let result;
+  try {
+    result = await runTransaction(db, async (tx) => {
+      // tx.get() = strong server read (NOT cache). This is LAYER D —
+      // eliminates the cache race that caused the original bug.
+      const snap = await tx.get(userRef);
+      const remote = snap.exists() ? snap.data() : null;
+
+      // ── LAYER C — Data preservation guard ─────────────────────────────
+      // An existing user with mirrorBaselineDate has completed onboarding.
+      // ABORT all writes — never touch their data, even auth-derived fields.
+      // This is the explicit guard per the dispatch spec ("Return existing
+      // doc as-is").
+      if (remote && remote.mirrorBaselineDate) {
+        console.warn(
+          '[grounded] LAYER C — existing onboarded user (uid=' + user.uid +
+          ') — aborting all writes to preserve data integrity'
+        );
+        return { migrated: false, source: "existing-onboarded-guarded" };
+      }
+
+      // ── Case C: brand-new user, nothing to migrate ────────────────────
+      // LAYER B: merge:true added in v26.1 as defense-in-depth.
+      if (!remote && !hasLocal) {
+        tx.set(userRef, clean({
+          schemaVersion: 1,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+          migratedFromLocalStorage: false,
+          user: baseUser,
+          subscription: defaultTrialSubscription(),
+        }), { merge: true });
+        return { migrated: false, source: "fresh" };
+      }
+
+      // ── Case A: upload localStorage as initial doc ────────────────────
+      // LAYER B: merge:true added in v26.1 as defense-in-depth.
+      if (!remote && hasLocal) {
+        tx.set(userRef, clean({
+          ...local,
+          schemaVersion: 1,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+          migratedFromLocalStorage: true,
+          user: { ...(local.user || {}), ...baseUser },
+          subscription: defaultTrialSubscription(),
+        }), { merge: true });
+        return { migrated: true, source: "fresh-upload" };
+      }
+
+      // ── Case B: merge — remote wins on overlap, local fills gaps ──────
+      if (remote && hasLocal) {
+        const merged = mergeForMigration(local, remote);
+        merged.migratedFromLocalStorage = true;
+        merged.updatedAt = serverTimestamp();
+        merged.user = { ...(merged.user || {}), ...baseUser };
+        tx.set(userRef, clean(merged), { merge: true });
+        return { migrated: true, source: "merge" };
+      }
+
+      // ── Case D: remote exists but mirrorBaselineDate not set ──────────
+      // (Partially-onboarded user — signed up but hasn't finished Mirror.)
+      // Light-touch profile update is safe here because Layer C already
+      // diverted the truly-onboarded case above.
+      tx.set(userRef, clean({
+        user: { ...(remote.user || {}), ...baseUser },
+        updatedAt: serverTimestamp(),
+      }), { merge: true });
+      return { migrated: false, source: "existing" };
+    });
+  } catch (e) {
+    console.warn('[grounded] ensureUserDocAndMigrate transaction failed:', e);
+    throw e;
   }
 
-  // ── Case A: upload localStorage as initial doc (one-time V20 hydrate carve-out)
-  if (!remote && hasLocal) {
-    await setDoc(userRef, clean({
-      ...local,
-      schemaVersion: 1,
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-      migratedFromLocalStorage: true,
-      user: { ...(local.user || {}), ...baseUser },
-      subscription: defaultTrialSubscription(),     // V24: 7-day trial begins now
-    }));
+  // Post-transaction side effects (MUST be outside the transaction so they
+  // run only on successful commit, not on retry iterations).
+  if (result.source === "fresh-upload" || result.source === "merge") {
     clearAnonData();
-    return { migrated: true, source: "fresh-upload" };
   }
 
-  // ── Case B: merge — remote wins on overlap, local fills gaps
-  if (remote && hasLocal) {
-    const merged = mergeForMigration(local, remote);
-    merged.migratedFromLocalStorage = true;
-    merged.updatedAt = serverTimestamp();
-    // Keep auth-derived user fields fresh
-    merged.user = { ...(merged.user || {}), ...baseUser };
-    await setDoc(userRef, clean(merged), { merge: true });
-    clearAnonData();
-    return { migrated: true, source: "merge" };
-  }
-
-  // ── Case D: doc exists, no localStorage
-  // Light touch — keep auth-derived user fields fresh on every sign-in.
-  await setDoc(userRef, clean({
-    user: { ...(remote.user || {}), ...baseUser },
-    updatedAt: serverTimestamp(),
-  }), { merge: true });
-  return { migrated: false, source: "existing" };
+  return result;
 }
 
 
@@ -921,6 +985,69 @@ const groundedSync = {
       // Redirect to Stripe Checkout
       window.location.href = data.url;
       return { ok: true, sessionId: data.sessionId, pricing: data.pricing };
+    } catch (e) {
+      return { ok: false, code: "fetch-failed", error: e.message };
+    }
+  },
+
+  /**
+   * v26.0 — Change a user's subscription plan (upgrade or downgrade).
+   *
+   *   newLookupKey: 'premium_standard' | 'pro_standard' | 'pro_founder' | 'premium_founder'
+   *   opts: { acknowledgeDowngrade?: boolean }
+   *
+   *   For downgrades, you MUST pass acknowledgeDowngrade: true. The Worker
+   *   returns 400 'downgrade_requires_acknowledgement' otherwise — Frontend
+   *   should show the friction modal and then re-call with the flag set.
+   *
+   *   Returns:
+   *     { ok: true, newTier, newLookupKey, effectiveAt: 'immediately' } on success
+   *     { ok: false, code, error? } on any failure
+   *
+   *   The Worker calls Stripe to update the subscription with proration_behavior:
+   *   'create_prorations' — user pays/refunds the prorated difference immediately.
+   *   The webhook will then fire customer.subscription.updated and sync Firestore.
+   */
+  async changePlan(newLookupKey, opts = {}) {
+    if (!currentUser)         return { ok: false, code: "no-user" };
+    if (!workerConfigured())  return { ok: false, code: "worker-not-configured" };
+
+    const validKeys = ["premium_founder", "premium_standard", "pro_founder", "pro_standard"];
+    if (!validKeys.includes(newLookupKey)) {
+      return { ok: false, code: "invalid-lookup-key" };
+    }
+
+    let token;
+    try { token = await currentUser.getIdToken(); }
+    catch (e) { return { ok: false, code: "token-failed", error: e.message }; }
+
+    try {
+      const res = await fetch(`${WORKER_URL}/changePlan`, {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          newLookupKey,
+          acknowledgeDowngrade: opts.acknowledgeDowngrade === true,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        return {
+          ok: false,
+          code: data.code || data.error || "http-error",
+          error: data.message || data.error,
+          currentTier: data.currentTier,
+          newTier: data.newTier,
+        };
+      }
+      // Optimistic flush of any pending debounced save before webhook fires
+      try { await groundedSync.flush(); } catch {}
+      return {
+        ok: true,
+        newTier: data.newTier,
+        newLookupKey: data.newLookupKey,
+        effectiveAt: data.effectiveAt,
+      };
     } catch (e) {
       return { ok: false, code: "fetch-failed", error: e.message };
     }
