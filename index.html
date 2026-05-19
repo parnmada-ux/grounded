@@ -6082,6 +6082,8 @@
             onContinueAnon={() => go('resonance')}
           />; break;
         case 'resonance':
+          // PATTERN A (single-entry) — if multi-entry added later (e.g.,
+          // "Re-take values" from Settings), flip this to goBack pattern.
           view = <ResonanceCheck
             onBack={() => go('welcome')}
             onComplete={(r) => go(r === 'in_right_place' ? 'in_right_place' : 'grounded_already')}
@@ -6119,20 +6121,25 @@
             }}
           />; break;
         case 'signup':
+          // PATTERN B (multi-entry — Welcome AND SignInScreen "Sign up?" toggle).
+          // goBack respects which path user came from; hardcoded would lose the
+          // SignIn↔SignUp toggle context.
           view = <SignUpScreen
             groundedAuth={groundedApi && groundedApi.groundedAuth}
             onSubmitted={() => { /* A3+J1 listener handles routing on success */ }}
             onSignIn={() => go('signin')}
             onSignInInstead={(email) => { setSignInPrefill(email); go('signin'); }}
-            onBack={() => go('welcome')}
+            onBack={goBack}
           />; break;
         case 'signin':
+          // PATTERN B (multi-entry — Welcome AND SignUpScreen "Sign in instead?"
+          // on email-already-in-use). Symmetric to SignUp above.
           view = <SignInScreen
             groundedAuth={groundedApi && groundedApi.groundedAuth}
             prefillEmail={signInPrefill}
             onSubmitted={() => { setSignInPrefill(''); /* A3+J1 listener handles routing */ }}
             onSignUp={() => go('signup')}
-            onBack={() => go('welcome')}
+            onBack={goBack}
           />; break;
         case 'values':
           view = <ValuesStep
@@ -6416,7 +6423,10 @@
             go(groundMeFrom);
           }} />; break;
         case 'gm_support':
-          view = <NeedToTalk onBack={() => go('gm_triage')} />; break;
+          // PATTERN B (multi-entry — gm_reminder, gm_struggling, gm_hard all
+          // route here via "Need to talk?" CTA). goBack respects which GM
+          // sub-screen user came from; hardcoded to triage loses that.
+          view = <NeedToTalk onBack={goBack} />; break;
 
         // ==== MIRROR ====
         case 'my_mirror':
@@ -6471,11 +6481,16 @@
             onToggle={(id) => toggleStoreExercise(id)}
             onInfo={(id) => { setActiveInfoExerciseId(id); go('exercise_info'); }} />; break;
         case 'exercise_info': {
+          // PATTERN B (multi-entry — ExerciseStore ⓘ AND MyPractice list ⓘ
+          // both route here). goBack respects which context the user was in.
           const ex = ALL_EXERCISES.find(e => e.id === activeInfoExerciseId) || ALL_EXERCISES[0];
-          view = <ExerciseInfo exercise={ex} onBack={() => go('exercise_store')} />;
+          view = <ExerciseInfo exercise={ex} onBack={goBack} />;
           break;
         }
         case 'exercise_entry': {
+          // PATTERN B (multi-entry — MyPractice list tap AND store→start flow
+          // both route here). goBack respects which context the user was in;
+          // hardcoded to my_practice would skip the store path entirely.
           const ex = ALL_EXERCISES.find(e => e.id === activeExerciseId) || ALL_EXERCISES[0];
           // V16/Bug10: pass existing entry for resume / locked-state detection,
           // plus two callbacks (draft + submit). After-save screen only shows on submit.
@@ -6486,7 +6501,7 @@
             existing={existing}
             onSaveDraft={(items) => { saveExerciseEntry(ex.id, items, false); /* V17/Bug11: no navigate — user stays to keep typing */ }}
             onSubmit={(items) => { saveExerciseEntry(ex.id, items, true); go('after_save'); }}
-            onBack={() => go('my_practice')} />;
+            onBack={goBack} />;
           break;
         }
         case 'after_save':
