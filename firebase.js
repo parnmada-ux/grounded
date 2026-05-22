@@ -248,6 +248,13 @@ function defaultTrialSubscription() {
     gracePeriodEndDate: null,
     lastWebhookEventId: null,     // webhook idempotency key — last Stripe event ID applied
     pricingHistory: [],
+    // v27.0 — Account deletion cool-off
+    scheduledForDeletion: null,   // timestamp — set by Worker /requestAccountDeletion
+    deletionRequestedAt: null,    // timestamp — when user clicked delete
+    // v27.0 — mirrors auth.token.email_verified for FE state access.
+    // Backend syncs this via Layer C when JWT claim changes (e.g., after user
+    // clicks verification link). FE reads from subscription.emailVerified.
+    emailVerified: false,
   };
 }
 
@@ -385,12 +392,27 @@ async function ensureUserDocAndMigrate(user) {
       const snap = await tx.get(userRef);
       const remote = snap.exists() ? snap.data() : null;
 
-      // ── LAYER C — Data preservation guard ─────────────────────────────
+      // ── LAYER C — Data preservation guard (v26.1) + emailVerified sync (v27.0) ──
       // An existing user with mirrorBaselineDate has completed onboarding.
-      // ABORT all writes — never touch their data, even auth-derived fields.
-      // This is the explicit guard per the dispatch spec ("Return existing
-      // doc as-is").
+      // ABORT all destructive writes. ONE exception (v27.0): if the JWT
+      // claim email_verified has changed (e.g., user just clicked the
+      // verification link), sync subscription.emailVerified to the new value
+      // so FE can see it without re-reading the token. This is a single
+      // nested-field merge — does not touch any user data.
       if (remote && remote.mirrorBaselineDate) {
+        const authEmailVerified = !!user.emailVerified;
+        const storedEmailVerified = remote.subscription && remote.subscription.emailVerified === true;
+        if (authEmailVerified !== storedEmailVerified) {
+          tx.set(userRef, {
+            subscription: { emailVerified: authEmailVerified },
+            updatedAt: serverTimestamp(),
+          }, { merge: true });
+          console.log(
+            '[grounded] LAYER C — onboarded user (uid=' + user.uid +
+            '), emailVerified sync: ' + storedEmailVerified + ' → ' + authEmailVerified
+          );
+          return { migrated: false, source: "existing-onboarded-emailVerified-synced" };
+        }
         console.warn(
           '[grounded] LAYER C — existing onboarded user (uid=' + user.uid +
           ') — aborting all writes to preserve data integrity'
@@ -1095,6 +1117,139 @@ const groundedSync = {
       try { await groundedSync.flush(); } catch {}
       window.location.href = data.url;
       return { ok: true };
+    } catch (e) {
+      return { ok: false, code: "fetch-failed", error: e.message };
+    }
+  },
+
+  // ── v27.0 ACCOUNT LIFECYCLE HELPERS ──────────────────────────────────────
+  //
+  //  Soft delete with 30-day cool-off. Frontend flow:
+  //    1. User confirms in Settings → FE calls requestAccountDeletion()
+  //    2. Backend writes scheduledForDeletion + pauses Stripe sub
+  //    3. User can sign back in during 30-day window — FE shows recovery
+  //       modal — calls restoreAccount() to cancel deletion
+  //    4. After 30 days, Worker cron force-deletes user + Auth user
+
+  /**
+   * Request account deletion (30-day cool-off period).
+   *
+   *   confirmText: must equal "DELETE MY ACCOUNT" (case-sensitive) — Frontend
+   *                shows a confirmation field; user types it to confirm.
+   *
+   *   Returns:
+   *     { ok: true, scheduledFor: <ISO>, daysUntilDeletion: 30 } on success
+   *     { ok: false, code, error?, scheduledFor? } on failure
+   *       code='already_scheduled' (409) — deletion already pending
+   *       code='invalid_confirm_text' (400) — confirmText didn't match
+   *       code='user-doc-not-found' (404) — no Firestore doc for user
+   *
+   *   NOTE: NOT gated on emailVerified — users can delete unverified accounts
+   *   to free up their email.
+   */
+  async requestAccountDeletion(confirmText) {
+    if (!currentUser)         return { ok: false, code: "no-user" };
+    if (!workerConfigured())  return { ok: false, code: "worker-not-configured" };
+    if (confirmText !== "DELETE MY ACCOUNT") {
+      return { ok: false, code: "invalid_confirm_text" };
+    }
+
+    let token;
+    try { token = await currentUser.getIdToken(); }
+    catch (e) { return { ok: false, code: "token-failed", error: e.message }; }
+
+    try {
+      const res = await fetch(`${WORKER_URL}/requestAccountDeletion`, {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ confirmText }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        return {
+          ok: false,
+          code: data.code || data.error || "http-error",
+          error: data.message || data.error,
+          scheduledFor: data.scheduledFor,
+        };
+      }
+      try { await groundedSync.flush(); } catch {}
+      return {
+        ok: true,
+        scheduledFor: data.scheduledFor,
+        daysUntilDeletion: data.daysUntilDeletion,
+      };
+    } catch (e) {
+      return { ok: false, code: "fetch-failed", error: e.message };
+    }
+  },
+
+  /**
+   * Cancel a pending account deletion (within the 30-day window).
+   * Resumes Stripe subscription if it was paused.
+   *
+   *   Returns:
+   *     { ok: true, stripeResumed: bool } on success
+   *     { ok: false, code, error? } on failure
+   *       code='no_active_deletion' (404) — nothing pending to cancel
+   *
+   *   NOT gated on emailVerified — parallels requestAccountDeletion.
+   */
+  async restoreAccount() {
+    if (!currentUser)         return { ok: false, code: "no-user" };
+    if (!workerConfigured())  return { ok: false, code: "worker-not-configured" };
+
+    let token;
+    try { token = await currentUser.getIdToken(); }
+    catch (e) { return { ok: false, code: "token-failed", error: e.message }; }
+
+    try {
+      const res = await fetch(`${WORKER_URL}/restoreAccount`, {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" },
+        body: "{}",
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        return {
+          ok: false,
+          code: data.code || data.error || "http-error",
+          error: data.message || data.error,
+        };
+      }
+      try { await groundedSync.flush(); } catch {}
+      return { ok: true, stripeResumed: !!data.stripeResumed };
+    } catch (e) {
+      return { ok: false, code: "fetch-failed", error: e.message };
+    }
+  },
+
+  /**
+   * Check whether an email address is scheduled for deletion.
+   * PUBLIC endpoint — no auth required. Used by Frontend on duplicate-email
+   * signup attempts to detect "cool-off" state and show recovery prompt.
+   *
+   *   Returns:
+   *     { ok: true, scheduled: false } — email not registered OR not in cool-off
+   *     { ok: true, scheduled: true, scheduledFor: <ISO>, daysRemaining: N }
+   *     { ok: false, code, error? } on transport failure
+   *
+   *   Privacy: reveals only "email is registered + in cool-off." Same shape
+   *   as Firebase Auth's natural email-already-in-use error.
+   */
+  async checkDeletionStatus(email) {
+    if (!workerConfigured()) return { ok: false, code: "worker-not-configured" };
+    if (!email || typeof email !== "string") {
+      return { ok: false, code: "invalid-email" };
+    }
+    try {
+      const url = `${WORKER_URL}/deletionStatus?email=${encodeURIComponent(email)}`;
+      const res = await fetch(url);
+      const data = await res.json();
+      if (!res.ok) {
+        return { ok: false, code: data.code || "http-error", error: data.error };
+      }
+      return data;   // { ok, scheduled, scheduledFor?, daysRemaining? }
     } catch (e) {
       return { ok: false, code: "fetch-failed", error: e.message };
     }
