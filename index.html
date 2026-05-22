@@ -1,4 +1,26 @@
 <!--
+  V50 — May 22, 2026
+  Account lifecycle + email verification batch (paired with Backend v26.2/v27.0):
+  CRITICAL:
+    #A1 Delete account → 2-step modal (warn + type-DELETE-MY-ACCOUNT) → POST /requestAccountDeletion → signOut + deletion_scheduled confirmation screen → welcome
+    #A2 Post-delete sign-in recovery modal — checks subState.scheduledForDeletion in hydration watcher; "Yes, keep" → /restoreAccount; "No, continue" → signOut to welcome
+    #C1 Email signup requires verification — sendEmailVerification on signup success, route to new verify_email screen, poll auth.currentUser.emailVerified every 4s, auto-route to TW when true. Google signup unaffected (natively verified)
+    #C2 Account Settings shows real emailVerified — green ✓ verified or yellow ⚠ + ResendVerifyButton (60s cooldown)
+  POLISH:
+    #P1 Cooling-off banner on Home/Settings (cream/gold, "Cancel deletion" + "Dismiss for now")
+    #P3 403 email_not_verified intercept on startCheckout — modal w/ Resend CTA
+    #P4 Duplicate-email signup → deletionStatus check → recovery modal w/ "Sign in to recover" pre-fills SignIn
+  NEW COMPONENTS: VerifyEmailScreen, DeletionScheduledScreen, DeleteAccountConfirmModal, ResendVerifyButton + 3 new in-line modals (recovery, emailNotVerified, duplicateEmail) + cooling-off banner overlay
+  BACKEND COORDINATION REQUIRED — helpers consumed (graceful no-op fallback if absent):
+    groundedSync.requestAccountDeletion({ confirmText })
+    groundedSync.restoreAccount()
+    groundedSync.deletionStatus(email)
+    groundedAuth.sendEmailVerification()
+    groundedAuth.currentUser.emailVerified
+    Worker 403 { error: 'email_not_verified' } on /createCheckoutSession + /changePlan
+    Firestore subscription.scheduledForDeletion (ISO date string)
+  DEFERRED carries forward from V49.1 (still pending): hasSeenTrialWelcome enforcement, banner dismiss-X persist, decision-helper UX, FAQ link, Practice roadmap
+
   V49.1 — May 19, 2026
   Pre-launch batch (11 fixes, single ship):
   CRITICAL:
@@ -1113,7 +1135,7 @@
     // link that pre-fills the email on the sign-in screen via App's
     // signInPrefill state. On success: A3+J1 listener fires → resolver routes
     // to mirror onboarding ('values'), no manual navigation needed here.
-    const SignUpScreen = ({ groundedAuth, onSubmitted, onSignIn, onSignInInstead, onBack }) => {
+    const SignUpScreen = ({ groundedAuth, onSubmitted, onSignIn, onSignInInstead, onBack, onDuplicateEmailScheduledCheck }) => {
       const [name, setName]         = useState('');
       const [email, setEmail]       = useState('');
       const [password, setPassword] = useState('');
@@ -1138,6 +1160,21 @@
           }
           const r = await groundedAuth.signUpWithEmail(email.trim(), password, name.trim());
           if (!r || !r.ok) {
+            // V50 Fix #P4: email-already-in-use → check Backend deletion status.
+            // If the email belongs to a scheduled-for-deletion account, surface
+            // recovery modal instead of generic error. Otherwise standard flow.
+            if (r && r.code === 'auth/email-already-in-use'
+                && typeof onDuplicateEmailScheduledCheck === 'function') {
+              try {
+                const dups = await onDuplicateEmailScheduledCheck(email.trim());
+                if (dups && dups.scheduled) {
+                  // App-level modal will surface; component just clears pending
+                  // and lets the parent route as needed.
+                  setPending(false);
+                  return;
+                }
+              } catch (e) { /* fall through to standard error */ }
+            }
             const m = mapAuthError(r && r.code, 'signup');
             if (m) setError(m);
             console.warn('[C1] signUpWithEmail failed:', r && r.code);
@@ -1145,8 +1182,18 @@
             return;
           }
           // V49.1 Fix #3: signal that post-auth router should show Trial Welcome
-          // (this is the email signup path — Path 2). Consumed in hydration watcher.
+          // (consumed in hydration watcher after email verification — V50/C1).
           try { localStorage.setItem('grounded_show_trial_welcome', '1'); } catch (e) {}
+          // V50 Fix #C1: send verification email. Don't block on failure —
+          // user can retry from VerifyEmailScreen. Routing to verify_email
+          // happens via onSubmitted callback below (App router intercepts).
+          try {
+            if (groundedAuth.sendEmailVerification) {
+              await groundedAuth.sendEmailVerification();
+            }
+          } catch (e) {
+            console.warn('[V50/C1] sendEmailVerification threw:', e);
+          }
           // V49.1 Fix #4: explicit wait for groundedAuth.currentUser before
           // signaling done. Defensive against the race where A3 listener
           // attaches mid-flight and misses the auth event on first attempt.
@@ -3907,11 +3954,95 @@
       );
     };
 
+    // V50 Fix #C2 — Verify button shown in AccountScreen below the email
+    // field when emailVerified=false. Tap → sendEmailVerification + inline
+    // toast status. 60s cooldown to match VerifyEmailScreen resend pattern.
+    const ResendVerifyButton = ({ groundedAuth }) => {
+      const [status, setStatus] = useState('idle');
+      const [cooldown, setCooldown] = useState(0);
+      useEffect(() => {
+        if (cooldown <= 0) return;
+        const t = setTimeout(() => setCooldown((c) => c - 1), 1000);
+        return () => clearTimeout(t);
+      }, [cooldown]);
+      const handleClick = async () => {
+        if (cooldown > 0 || status === 'sending') return;
+        setStatus('sending');
+        try {
+          if (groundedAuth && typeof groundedAuth.sendEmailVerification === 'function') {
+            await groundedAuth.sendEmailVerification();
+            setStatus('sent');
+            setCooldown(60);
+            setTimeout(() => setStatus('idle'), 3000);
+          } else {
+            setStatus('error');
+            setTimeout(() => setStatus('idle'), 3000);
+          }
+        } catch (e) {
+          console.warn('[V50/C2] sendEmailVerification threw:', e);
+          setStatus('error');
+          setTimeout(() => setStatus('idle'), 3000);
+        }
+      };
+      return (
+        <button
+          onClick={handleClick}
+          disabled={cooldown > 0 || status === 'sending'}
+          className="text-[12px] underline mt-1.5 disabled:opacity-50 disabled:no-underline"
+          style={{ color: '#3D5E4C' }}>
+          {status === 'sent' ? 'Verification email sent ✓'
+            : status === 'sending' ? 'Sending…'
+            : status === 'error' ? 'Could not send — try later'
+            : cooldown > 0 ? `Resend (${cooldown}s)`
+            : 'Verify email →'}
+        </button>
+      );
+    };
+
+    // V50 Fix #A1 — Step-2 delete confirmation modal. Requires typing
+    // "DELETE MY ACCOUNT" exactly to enable the destructive button.
+    const DeleteAccountConfirmModal = ({ onCancel, onConfirm }) => {
+      const [text, setText] = useState('');
+      const REQUIRED = 'DELETE MY ACCOUNT';
+      const matches = text === REQUIRED;
+      return (
+        <div className="absolute inset-0 z-50 flex items-center justify-center px-6 pb-12"
+             style={{background:'rgba(0,0,0,0.5)'}}
+             onClick={onCancel}>
+          <div className="card p-6 text-left w-full" style={{maxWidth:'340px'}}
+               onClick={e => e.stopPropagation()}>
+            <h3 className="font-serif font-semibold text-[22px] text-g-deep mb-3 text-center">One more step</h3>
+            <p className="text-g-charcoal text-sm leading-relaxed mb-4">
+              Type <span className="font-bold">{REQUIRED}</span> (in capitals) to confirm.
+            </p>
+            <input
+              className="input-field mb-4"
+              placeholder="Type here"
+              value={text}
+              onChange={e => setText(e.target.value)}
+              autoCapitalize="characters"
+            />
+            <div className="flex flex-col items-center gap-3">
+              <PillButton onClick={onCancel}>Cancel</PillButton>
+              <button
+                onClick={() => matches && onConfirm()}
+                disabled={!matches}
+                className="text-sm font-semibold underline disabled:opacity-40 disabled:no-underline disabled:cursor-not-allowed"
+                style={{color:'#C06E60'}}>
+                Delete my account
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    };
+
     // V15/Bug4: AccountScreen now reads form values from `draft` (App-level
     // accountDraft state) instead of holding local useState. Sub-screen
     // navigation (Change email/mobile/password) no longer wipes typed values.
     // Profile pic sheet + delete modal stay local — transient UI, no nav survival.
-    const AccountScreen = ({ draft, onUpdateDraft, onCommit, onExit, onManagePlan, onChangeEmail, onChangeMobile, onChangePassword, onDeleteAccount }) => {
+    // V50 Fix #C2: groundedAuth prop added for emailVerified status reads.
+    const AccountScreen = ({ draft, onUpdateDraft, onCommit, onExit, onManagePlan, onChangeEmail, onChangeMobile, onChangePassword, onDeleteAccount, groundedAuth }) => {
       // Defensive read: draft should never be null while this screen is mounted
       // (enterAccount initializes it before navigating here), but if it is,
       // fall back to empty strings so the screen doesn't crash.
@@ -3983,9 +4114,21 @@
                      value={name} onChange={e => onUpdateDraft({ displayName: e.target.value })} />
             </div>
 
-            {/* Email — read-only, tap to change */}
+            {/* Email — read-only, tap to change. V50 Fix #C2: show real
+                emailVerified status from auth.currentUser. Green tick when
+                verified; yellow warn + Verify link when not. */}
             <div className="mb-3">
-              <p className="text-g-gray text-[13px] mb-1">Email</p>
+              <p className="text-g-gray text-[13px] mb-1 flex items-center gap-1.5">
+                <span>Email</span>
+                {(() => {
+                  const u = groundedAuth && groundedAuth.currentUser;
+                  if (!u || !email) return null;
+                  if (u.emailVerified) {
+                    return <span className="text-[11px] font-semibold" style={{ color: '#5B8A72' }}>✓ verified</span>;
+                  }
+                  return <span className="text-[11px] font-semibold" style={{ color: '#C9A86C' }}>⚠ not verified</span>;
+                })()}
+              </p>
               <button onClick={onChangeEmail}
                       className="input-field flex items-center justify-between text-left">
                 <span className={email ? '' : 'italic'}
@@ -3994,6 +4137,15 @@
                 </span>
                 <span className="text-g-gray">→</span>
               </button>
+              {/* V50 Fix #C2: Verify CTA appears below the email field when
+                  the user's email is not yet verified. Sends email via Firebase
+                  sendEmailVerification helper; toast confirmation handled by
+                  ResendVerifyButton sub-component. */}
+              {(() => {
+                const u = groundedAuth && groundedAuth.currentUser;
+                if (!u || !email || u.emailVerified) return null;
+                return <ResendVerifyButton groundedAuth={groundedAuth} />;
+              })()}
             </div>
 
             {/* Username — inline editable + availability */}
@@ -4104,7 +4256,7 @@
 
             {/* Delete account */}
             <div className="card-outline px-4 py-4 text-center mt-3">
-              <button onClick={() => setShowDelete(true)} className="text-g-charcoal font-bold text-[15px]">Delete account</button>
+              <button onClick={() => setShowDelete('warn')} className="text-g-charcoal font-bold text-[15px]">Delete account</button>
             </div>
             <p className="text-center text-g-gray text-[12px] italic mt-2">"This will remove everything without a copy."</p>
           </div>
@@ -4134,34 +4286,40 @@
             </div>
           )}
 
-          {/* Delete account confirmation */}
-          {showDelete && (
+          {/* V50 Fix #A1: 2-step delete account flow. Step 1 = warning with
+              30-day cool-off info + "Keep my account" defaulted. Step 2 =
+              type "DELETE MY ACCOUNT" exact-match confirmation. On confirm
+              → onDeleteAccount() (router calls /requestAccountDeletion). */}
+          {showDelete === 'warn' && (
             <div className="absolute inset-0 z-50 flex items-center justify-center px-6 pb-12"
                  style={{background:'rgba(0,0,0,0.5)'}}
                  onClick={() => setShowDelete(false)}>
-              <div className="card p-6 text-center w-full" style={{maxWidth:'320px'}}
+              <div className="card p-6 text-left w-full" style={{maxWidth:'340px'}}
                    onClick={e => e.stopPropagation()}>
-                <div className="text-3xl mb-3">⚠️</div>
-                <h3 className="font-serif text-[22px] text-g-deep mb-3">Delete your account?</h3>
+                <h3 className="font-serif font-semibold text-[22px] text-g-deep mb-3 text-center">Delete your account?</h3>
                 <p className="text-g-charcoal text-sm leading-relaxed mb-2">
-                  This will remove your Mirror, all your reflections, exercise history, and account info — permanently.
+                  You'll have 30 days to change your mind. After that, everything will be permanently deleted:
                 </p>
-                <p className="text-g-charcoal text-sm leading-relaxed mb-5 italic">
-                  We can't undo this. Make sure you've exported anything you'd like to keep.
-                </p>
-                <div className="flex gap-3 justify-center">
-                  <button onClick={() => setShowDelete(false)}
-                          className="px-5 py-2 rounded-full border border-g-line text-g-charcoal font-semibold text-sm">
-                    Keep account
-                  </button>
-                  <button onClick={() => { setShowDelete(false); onDeleteAccount(); }}
-                          className="px-5 py-2 rounded-full text-white font-semibold text-sm"
-                          style={{background:'#C06E60'}}>
-                    Yes, delete
+                <ul className="text-g-charcoal text-sm leading-relaxed pl-2 mb-5 space-y-1">
+                  <li>— Your Mirror, reflections, and practice history</li>
+                  <li>— Your subscription (will not renew during the 30-day window)</li>
+                  <li>— Your access to Grounded</li>
+                </ul>
+                <div className="flex flex-col items-center gap-3">
+                  <PillButton onClick={() => setShowDelete(false)}>Keep my account</PillButton>
+                  <button onClick={() => setShowDelete('confirm')}
+                          className="text-sm underline font-semibold" style={{color:'#C06E60'}}>
+                    Continue to delete
                   </button>
                 </div>
               </div>
             </div>
+          )}
+          {showDelete === 'confirm' && (
+            <DeleteAccountConfirmModal
+              onCancel={() => setShowDelete(false)}
+              onConfirm={() => { setShowDelete(false); onDeleteAccount(); }}
+            />
           )}
 
           {/* V15/Bug5: birthday confirmation modal — non-destructive lock.
@@ -5400,6 +5558,165 @@
     );
 
     // ============================================================
+    // V50 Fix #C1 — VERIFY EMAIL SCREEN
+    // Renders after email signup. Polls auth.currentUser.emailVerified
+    // (refresh-on-tick via reload()) and auto-routes to home (which kicks
+    // into TW for new users via hydration watcher) when flipped true.
+    // Resend button has 60s cooldown to prevent abuse.
+    // ============================================================
+    const VerifyEmailScreen = ({ email, groundedAuth, onChangeEmail, onContinueWhenVerified }) => {
+      const [resendCooldown, setResendCooldown] = useState(60);
+      const [resendStatus, setResendStatus] = useState('idle'); // idle | sending | sent | error
+      const [checking, setChecking] = useState(false);
+
+      // V50/C1: poll emailVerified status every 4s. Use auth.currentUser.reload()
+      // to fetch latest verification state from Firebase. When verified, hand off.
+      useEffect(() => {
+        if (!groundedAuth || !groundedAuth.currentUser) return;
+        let stopped = false;
+        const tick = async () => {
+          if (stopped) return;
+          try {
+            if (typeof groundedAuth.reloadCurrentUser === 'function') {
+              await groundedAuth.reloadCurrentUser();
+            } else if (groundedAuth.currentUser && typeof groundedAuth.currentUser.reload === 'function') {
+              await groundedAuth.currentUser.reload();
+            }
+            if (groundedAuth.currentUser && groundedAuth.currentUser.emailVerified) {
+              if (!stopped) onContinueWhenVerified();
+              return;
+            }
+          } catch (e) { /* network blip — keep polling */ }
+        };
+        const interval = setInterval(tick, 4000);
+        // First check immediately
+        tick();
+        return () => { stopped = true; clearInterval(interval); };
+      }, [groundedAuth, onContinueWhenVerified]);
+
+      // Cooldown timer
+      useEffect(() => {
+        if (resendCooldown <= 0) return;
+        const t = setTimeout(() => setResendCooldown((c) => c - 1), 1000);
+        return () => clearTimeout(t);
+      }, [resendCooldown]);
+
+      const handleResend = async () => {
+        if (resendCooldown > 0 || resendStatus === 'sending') return;
+        setResendStatus('sending');
+        try {
+          if (groundedAuth && typeof groundedAuth.sendEmailVerification === 'function') {
+            await groundedAuth.sendEmailVerification();
+            setResendStatus('sent');
+            setResendCooldown(60);
+            setTimeout(() => setResendStatus('idle'), 3000);
+          } else {
+            // Pre-Backend helper fallback — flag so it's visible in test
+            setResendStatus('error');
+            setTimeout(() => setResendStatus('idle'), 3000);
+          }
+        } catch (e) {
+          console.warn('[V50/C1] resend verification threw:', e);
+          setResendStatus('error');
+          setTimeout(() => setResendStatus('idle'), 3000);
+        }
+      };
+
+      const handleManualCheck = async () => {
+        if (checking || !groundedAuth || !groundedAuth.currentUser) return;
+        setChecking(true);
+        try {
+          if (groundedAuth.currentUser && typeof groundedAuth.currentUser.reload === 'function') {
+            await groundedAuth.currentUser.reload();
+          }
+          if (groundedAuth.currentUser && groundedAuth.currentUser.emailVerified) {
+            onContinueWhenVerified();
+            return;
+          }
+        } catch (e) { /* ignore */ }
+        setChecking(false);
+      };
+
+      return (
+        <div className="phone-frame fade-in" style={{ backgroundColor: '#F0F7F4' }}>
+          <div className="flex-1 flex flex-col items-center justify-center px-8 pb-20 text-center">
+            <div className="text-3xl mb-5">📧</div>
+            <h2 className="text-[28px] font-serif font-semibold text-g-deep mb-4 leading-snug">One more step</h2>
+            <div className="card px-6 py-5 w-full">
+              <p className="text-g-charcoal text-sm leading-relaxed">
+                We sent a verification link to <span className="font-semibold text-g-deep">{email || 'your email'}</span>.
+              </p>
+              <p className="text-g-charcoal text-sm leading-relaxed mt-3">
+                Click it to start your trial.
+              </p>
+            </div>
+            <div className="mt-7 flex flex-col items-center gap-3 w-full">
+              <button
+                onClick={handleManualCheck}
+                disabled={checking}
+                className="text-g-deep text-sm underline font-semibold disabled:opacity-50">
+                {checking ? 'Checking…' : "I've verified — continue"}
+              </button>
+              <button
+                onClick={handleResend}
+                disabled={resendCooldown > 0 || resendStatus === 'sending'}
+                className="text-g-deep text-sm underline disabled:opacity-50 disabled:no-underline disabled:text-g-gray">
+                {resendStatus === 'sent' ? 'Verification email sent ✓'
+                  : resendStatus === 'sending' ? 'Sending…'
+                  : resendStatus === 'error' ? 'Could not resend — try again later'
+                  : resendCooldown > 0 ? `Resend email (${resendCooldown}s)`
+                  : 'Resend email'}
+              </button>
+              {onChangeEmail && (
+                <button onClick={onChangeEmail} className="text-g-gray text-sm underline">
+                  Wrong email? Change it
+                </button>
+              )}
+            </div>
+            <p className="text-center text-g-gray text-xs italic mt-7 px-4">
+              You can leave this page — we'll let you in once you've verified.
+            </p>
+          </div>
+        </div>
+      );
+    };
+
+    // ============================================================
+    // V50 Fix #A1 — DELETION SCHEDULED CONFIRMATION SCREEN
+    // Full-screen after successful POST /requestAccountDeletion.
+    // Shows scheduled deletion date + "Done" → welcome.
+    // ============================================================
+    const DeletionScheduledScreen = ({ scheduledFor, onDone }) => {
+      const dateText = (() => {
+        if (!scheduledFor) return '30 days from now';
+        const d = new Date(scheduledFor);
+        if (isNaN(d)) return '30 days from now';
+        return d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+      })();
+      return (
+        <div className="phone-frame fade-in" style={{ backgroundColor: '#F0F7F4' }}>
+          <div className="flex-1 flex flex-col items-center justify-center px-8 pb-20 text-center">
+            <div className="text-3xl mb-5">🌿</div>
+            <h2 className="text-[26px] font-serif font-semibold text-g-deep mb-5 leading-snug">
+              Your account is scheduled<br/>for deletion
+            </h2>
+            <div className="card px-6 py-5 w-full">
+              <p className="text-g-charcoal text-sm leading-relaxed">
+                Final deletion: <span className="font-semibold text-g-deep">{dateText}</span>.
+              </p>
+              <p className="text-g-charcoal text-sm leading-relaxed mt-3">
+                Sign in anytime before then to recover your account.
+              </p>
+            </div>
+            <div className="mt-8 flex flex-col items-center">
+              <PillButton onClick={onDone}>Done</PillButton>
+            </div>
+          </div>
+        </div>
+      );
+    };
+
+    // ============================================================
     // APP — Screen Router
     // ============================================================
     const App = () => {
@@ -5466,6 +5783,18 @@
       const [founderExhaustedModal, setFounderExhaustedModal] = useState(null);
       // V49.1 Fix #7: downgrade friction modal state — { isProFounder } or null
       const [downgradeModal, setDowngradeModal] = useState(null);
+      // V50 Fix #A2: recovery modal during cool-off — { scheduledFor, daysLeft }
+      const [recoveryModal, setRecoveryModal] = useState(null);
+      // V50 Fix #P3: 403 email_not_verified intercept — { email } or null
+      const [emailNotVerifiedModal, setEmailNotVerifiedModal] = useState(null);
+      // V50 Fix #P4: duplicate-email-scheduled-for-deletion — { email, scheduledFor }
+      const [duplicateEmailModal, setDuplicateEmailModal] = useState(null);
+      // V50 Fix #A1: 2-step delete account modal state — null | 'warn' | 'confirm'
+      const [deleteAccountStep, setDeleteAccountStep] = useState(null);
+      // V50 Fix #P1: cooling-off banner dismiss-this-session flag (resets on reload)
+      const [coolingOffBannerDismissed, setCoolingOffBannerDismissed] = useState(false);
+      // V50 Fix #C1: shared verify_email context (email to display + resend cooldown)
+      const [verifyEmailContext, setVerifyEmailContext] = useState(null);
 
       // V25/Phase2: ref to groundedSync for RedeemCodeModal — passes through
       // groundedApi mutations across re-renders without prop drilling.
@@ -5720,6 +6049,27 @@
             }
           }
         } catch (e) {}
+
+        // V50 Fix #A2: recovery modal during cool-off. If user signed in
+        // and their subscription has scheduledForDeletion set + future,
+        // show the modal BEFORE routing — user must choose Keep or Continue.
+        if (user && subState && subState.scheduledForDeletion) {
+          const _scheduledMs = (() => {
+            const d = new Date(subState.scheduledForDeletion);
+            return isNaN(d) ? null : d.getTime();
+          })();
+          if (_scheduledMs && _scheduledMs > Date.now()) {
+            const daysLeft = Math.ceil((_scheduledMs - Date.now()) / (1000 * 60 * 60 * 24));
+            setRecoveryModal({
+              scheduledFor: subState.scheduledForDeletion,
+              daysLeft: daysLeft,
+            });
+            // Hold routing — recovery modal owns the next step.
+            setAwaitingHydration(false);
+            setAuthResolved(true);
+            return;
+          }
+        }
 
         setScreen(next);
         setAwaitingHydration(false);
@@ -6304,10 +6654,39 @@
           // SignIn↔SignUp toggle context.
           view = <SignUpScreen
             groundedAuth={groundedApi && groundedApi.groundedAuth}
-            onSubmitted={() => { /* A3+J1 listener handles routing on success */ }}
+            onSubmitted={() => {
+              // V50 Fix #C1: route to verify_email screen post-signup. Capture
+              // the user's email for display + retain auth context so the
+              // verification poll has groundedAuth.currentUser to inspect.
+              const currentEmail = (groundedApi && groundedApi.groundedAuth
+                && groundedApi.groundedAuth.currentUser
+                && groundedApi.groundedAuth.currentUser.email) || '';
+              setVerifyEmailContext({ email: currentEmail });
+              go('verify_email');
+            }}
             onSignIn={() => go('signin')}
             onSignInInstead={(email) => { setSignInPrefill(email); go('signin'); }}
             onBack={goBack}
+            // V50 Fix #P4: pass duplicate-email-scheduled-for-deletion check.
+            // SignUp calls this on auth/email-already-in-use; if scheduled,
+            // we surface modal and SignUpScreen clears its pending state.
+            onDuplicateEmailScheduledCheck={async (emailAddr) => {
+              const _sync = groundedApi && groundedApi.groundedSync;
+              if (!_sync || typeof _sync.deletionStatus !== 'function') {
+                return { scheduled: false };
+              }
+              try {
+                const r = await _sync.deletionStatus(emailAddr);
+                if (r && r.scheduled) {
+                  setDuplicateEmailModal({
+                    email: emailAddr,
+                    scheduledFor: r.scheduledFor || null,
+                  });
+                  return { scheduled: true };
+                }
+              } catch (e) { console.warn('[V50/P4] deletionStatus threw:', e); }
+              return { scheduled: false };
+            }}
           />; break;
         case 'signin':
           // PATTERN B (multi-entry — Welcome AND SignUpScreen "Sign in instead?"
@@ -6318,6 +6697,31 @@
             onSubmitted={() => { setSignInPrefill(''); /* A3+J1 listener handles routing */ }}
             onSignUp={() => go('signup')}
             onBack={goBack}
+          />; break;
+        // V50 Fix #C1: verify-email screen — post-signup waiting room. Polls
+        // emailVerified status; auto-routes to home (which kicks into TW for
+        // new users via existing hydration flag) when verified.
+        case 'verify_email':
+          view = <VerifyEmailScreen
+            email={(verifyEmailContext && verifyEmailContext.email) || ''}
+            groundedAuth={groundedApi && groundedApi.groundedAuth}
+            onChangeEmail={() => go('change_email')}
+            onContinueWhenVerified={() => {
+              setVerifyEmailContext(null);
+              // Reuse the V49.1 Fix #3 TW flag so existing hydration watcher
+              // routes the now-verified user through Trial Welcome → Mirror.
+              try { localStorage.setItem('grounded_show_trial_welcome', '1'); } catch (e) {}
+              setScreen('home');
+              setAwaitingHydration(true);
+            }}
+          />; break;
+        // V50 Fix #A1: post-delete confirmation full-screen. After successful
+        // POST /requestAccountDeletion → user is signed out, lands here, sees
+        // scheduled date, taps Done → welcome.
+        case 'deletion_scheduled':
+          view = <DeletionScheduledScreen
+            scheduledFor={subState && subState.scheduledForDeletion}
+            onDone={() => { clearHistory(); setScreen('welcome'); }}
           />; break;
         case 'values':
           view = <ValuesStep
@@ -6488,6 +6892,16 @@
                 const successUrl = baseUrl + '?checkout=success';
                 const cancelUrl  = baseUrl + '?checkout=cancel';
                 const result = await _sync.startCheckout(tier, { successUrl, cancelUrl });
+                // V50 Fix #P3: 403 email_not_verified — Backend v26.2 returns
+                // this when user attempts a paid action without verified email.
+                // Show modal w/ Resend CTA instead of redirecting to Stripe.
+                if (result && result.error === 'email_not_verified') {
+                  const _currentEmail = (groundedApi && groundedApi.groundedAuth
+                    && groundedApi.groundedAuth.currentUser
+                    && groundedApi.groundedAuth.currentUser.email) || '';
+                  setEmailNotVerifiedModal({ email: _currentEmail });
+                  return null;
+                }
                 // V49.1 Fix #5: 409 already_subscribed — Backend v26.0 returns
                 // { error: 'already_subscribed', currentTier, portalUrl } when
                 // user has active sub. Show modal with portal redirect option.
@@ -6762,13 +7176,46 @@
             onChangeEmail={() => go('change_email')}
             onChangeMobile={() => go('change_mobile')}
             onChangePassword={() => go('change_password')}
-            onDeleteAccount={() => {
-              // V15/Bug4: defensive — account is being deleted, draft is meaningless.
-              // V27: clear nav history so user can't goBack into the deleted account.
-              setAccountDraft(null);
-              localStorage.removeItem(LS_KEY); setData({});
-              clearHistory();
-              setScreen('welcome');
+            // V50 Fix #C2: pass groundedAuth for emailVerified status reads.
+            groundedAuth={groundedApi && groundedApi.groundedAuth}
+            // V50 Fix #A1: call Backend POST /requestAccountDeletion. On success,
+            // sign out + clear local data + route to confirmation screen. The
+            // 2-step confirmation modal lives inside AccountScreen; this handler
+            // fires only after type-DELETE-MY-ACCOUNT exact match.
+            onDeleteAccount={async () => {
+              const _sync = groundedApi && groundedApi.groundedSync;
+              if (!_sync || typeof _sync.requestAccountDeletion !== 'function') {
+                console.warn('[V50/A1] requestAccountDeletion helper missing — Backend not ready');
+                // Pre-Backend fallback: clear local + welcome (V49 behavior)
+                setAccountDraft(null);
+                localStorage.removeItem(LS_KEY); setData({});
+                clearHistory();
+                setScreen('welcome');
+                return;
+              }
+              try {
+                const r = await _sync.requestAccountDeletion({ confirmText: 'DELETE MY ACCOUNT' });
+                if (r && r.ok !== false) {
+                  // V15/Bug4: clear account draft (account about to be gone).
+                  // V27: clear nav history.
+                  setAccountDraft(null);
+                  localStorage.removeItem(LS_KEY); setData({});
+                  clearHistory();
+                  // Sign out — subState listener will catch the change; route
+                  // to deletion_scheduled confirmation screen (which then
+                  // takes user to welcome on Done).
+                  if (groundedApi && groundedApi.groundedAuth && groundedApi.groundedAuth.signOut) {
+                    try { await groundedApi.groundedAuth.signOut(); } catch (e) { /* defensive */ }
+                  }
+                  setScreen('deletion_scheduled');
+                } else {
+                  console.warn('[V50/A1] requestAccountDeletion failed:', r);
+                  // Component-level toast would be nicer but we're back in App;
+                  // log + leave user in Account screen.
+                }
+              } catch (e) {
+                console.warn('[V50/A1] requestAccountDeletion threw:', e);
+              }
             }}
           />; break;
         case 'change_email':
@@ -6888,9 +7335,49 @@
         ['support','Support'],
       ];
 
+      // V50 Fix #P1: cooling-off banner — persistent warning on Home/Settings
+      // when subState has scheduledForDeletion set. Subtle warning color
+      // (cream/gold, not alarming red). Dismissible per-session (state-level).
+      const _coolingOffActive = !!(subState && subState.scheduledForDeletion);
+      const _coolingOffDate = _coolingOffActive ? new Date(subState.scheduledForDeletion) : null;
+      const _coolingOffDaysLeft = (_coolingOffActive && _coolingOffDate && !isNaN(_coolingOffDate))
+        ? Math.max(0, Math.ceil((_coolingOffDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24)))
+        : null;
+      const _bannerEligible = _coolingOffActive && !coolingOffBannerDismissed
+        && (effectiveScreen === 'home' || effectiveScreen === 'settings');
+
       return (
         <div className="stage">
           {view}
+          {/* V50 Fix #P1: cooling-off banner. Renders above current view (fixed
+              top of phone-frame). Tap "Cancel deletion" → /restoreAccount.
+              Tap "Dismiss for now" → hide for session (don't clear field). */}
+          {_bannerEligible && _coolingOffDaysLeft !== null && (
+            <div className="absolute top-0 left-0 right-0 z-40 px-4 py-3 fade-in"
+                 style={{ backgroundColor: '#FFF8F0', borderBottom: '1px solid #F0E8D8' }}>
+              <p className="text-[12.5px] text-g-charcoal leading-snug">
+                <span className="font-semibold">Your account will be deleted on </span>
+                {_coolingOffDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                <span className="text-g-gray"> · {_coolingOffDaysLeft} day{_coolingOffDaysLeft === 1 ? '' : 's'} left</span>
+              </p>
+              <div className="flex gap-4 mt-1.5">
+                <button onClick={async () => {
+                  const _sync = groundedApi && groundedApi.groundedSync;
+                  if (_sync && typeof _sync.restoreAccount === 'function') {
+                    try { await _sync.restoreAccount(); }
+                    catch (e) { console.warn('[V50/P1] restoreAccount threw:', e); }
+                  }
+                  setCoolingOffBannerDismissed(true);
+                }} className="text-[12px] underline font-semibold" style={{ color: '#3D5E4C' }}>
+                  Cancel deletion
+                </button>
+                <button onClick={() => setCoolingOffBannerDismissed(true)}
+                  className="text-[12px] underline" style={{ color: '#888888' }}>
+                  Dismiss for now
+                </button>
+              </div>
+            </div>
+          )}
           {/* V15/Bug6: MigrationOverlay moved to early-return precedence above
               (replaces the old layered render that sat on top of {view}). */}
           {/* V49/M2: post-checkout / post-portal return toast. Surfaces over
@@ -6988,6 +7475,115 @@
                   }}>Continue to checkout</PillButton>
                   <button onClick={() => setFounderExhaustedModal(null)}
                     className="text-g-gray text-sm underline">Maybe later</button>
+                </div>
+              </div>
+            </div>
+          )}
+          {/* V50 Fix #A2: recovery modal during cool-off. Shown when user signs
+              in and their account is scheduled for deletion. "Keep my account"
+              calls /restoreAccount; "Continue with deletion" signs out. */}
+          {recoveryModal && (
+            <div className="absolute inset-0 z-50 flex items-center justify-center px-6 fade-in"
+                 style={{ backgroundColor: 'rgba(61, 94, 76, 0.6)' }}
+                 role="dialog" aria-modal="true">
+              <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-xl">
+                <h3 className="font-serif font-semibold text-[22px] text-g-deep mb-3 text-center">Welcome back</h3>
+                <p className="text-g-charcoal text-[14px] leading-relaxed mb-2">
+                  Your account is scheduled for deletion on <span className="font-semibold text-g-deep">
+                  {(() => {
+                    const d = new Date(recoveryModal.scheduledFor);
+                    return isNaN(d) ? '—' : d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+                  })()}
+                  </span>. That's in {recoveryModal.daysLeft} day{recoveryModal.daysLeft === 1 ? '' : 's'}.
+                </p>
+                <p className="text-g-charcoal text-[14px] leading-relaxed mb-5">
+                  Want to keep your account?
+                </p>
+                <div className="flex flex-col items-center gap-3">
+                  <PillButton onClick={async () => {
+                    const _sync = groundedApi && groundedApi.groundedSync;
+                    if (_sync && typeof _sync.restoreAccount === 'function') {
+                      try {
+                        await _sync.restoreAccount();
+                      } catch (e) {
+                        console.warn('[V50/A2] restoreAccount threw:', e);
+                      }
+                    }
+                    setRecoveryModal(null);
+                    // Continue routing — subState will refresh via subscribe.
+                    // Default to home for restored users.
+                    setScreen('home');
+                  }}>Yes, keep my account</PillButton>
+                  <button onClick={async () => {
+                    setRecoveryModal(null);
+                    if (groundedApi && groundedApi.groundedAuth && groundedApi.groundedAuth.signOut) {
+                      try { await groundedApi.groundedAuth.signOut(); } catch (e) { /* defensive */ }
+                    }
+                    clearHistory();
+                    setScreen('welcome');
+                  }} className="text-g-gray text-sm underline">No, continue with deletion</button>
+                </div>
+              </div>
+            </div>
+          )}
+          {/* V50 Fix #P3: 403 email_not_verified intercept modal. Surfaces
+              when subscribe/changePlan returns 403 because user hasn't yet
+              verified email. Resend triggers sendEmailVerification. */}
+          {emailNotVerifiedModal && (
+            <div className="absolute inset-0 z-50 flex items-center justify-center px-6 fade-in"
+                 style={{ backgroundColor: 'rgba(61, 94, 76, 0.6)' }}
+                 onClick={() => setEmailNotVerifiedModal(null)}
+                 role="dialog" aria-modal="true">
+              <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-xl"
+                   onClick={(e) => e.stopPropagation()}>
+                <h3 className="font-serif font-semibold text-[22px] text-g-deep mb-3">Verify your email to continue</h3>
+                <p className="text-g-charcoal text-[14px] leading-relaxed mb-5">
+                  Please verify <span className="font-semibold text-g-deep">{emailNotVerifiedModal.email}</span> to subscribe. Check your inbox.
+                </p>
+                <div className="flex flex-col items-center gap-3">
+                  <PillButton onClick={async () => {
+                    const _auth = groundedApi && groundedApi.groundedAuth;
+                    if (_auth && typeof _auth.sendEmailVerification === 'function') {
+                      try { await _auth.sendEmailVerification(); }
+                      catch (e) { console.warn('[V50/P3] resend threw:', e); }
+                    }
+                    setEmailNotVerifiedModal(null);
+                  }}>Resend verification</PillButton>
+                  <button onClick={() => setEmailNotVerifiedModal(null)}
+                    className="text-g-gray text-sm underline">Cancel</button>
+                </div>
+              </div>
+            </div>
+          )}
+          {/* V50 Fix #P4: duplicate-email-scheduled-for-deletion modal. Shown
+              when signup email matches an account that's in cool-off. CTA
+              routes to SignIn with pre-filled email for recovery. */}
+          {duplicateEmailModal && (
+            <div className="absolute inset-0 z-50 flex items-center justify-center px-6 fade-in"
+                 style={{ backgroundColor: 'rgba(61, 94, 76, 0.6)' }}
+                 onClick={() => setDuplicateEmailModal(null)}
+                 role="dialog" aria-modal="true">
+              <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-xl"
+                   onClick={(e) => e.stopPropagation()}>
+                <h3 className="font-serif font-semibold text-[22px] text-g-deep mb-3">This email is scheduled for deletion</h3>
+                <p className="text-g-charcoal text-[14px] leading-relaxed mb-5">
+                  It will be permanently deleted on <span className="font-semibold text-g-deep">
+                  {(() => {
+                    if (!duplicateEmailModal.scheduledFor) return '—';
+                    const d = new Date(duplicateEmailModal.scheduledFor);
+                    return isNaN(d) ? '—' : d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+                  })()}
+                  </span>. Want to recover this account and sign in instead?
+                </p>
+                <div className="flex flex-col items-center gap-3">
+                  <PillButton onClick={() => {
+                    const email = duplicateEmailModal.email;
+                    setDuplicateEmailModal(null);
+                    setSignInPrefill(email);
+                    go('signin');
+                  }}>Sign in to recover</PillButton>
+                  <button onClick={() => setDuplicateEmailModal(null)}
+                    className="text-g-gray text-sm underline">Use a different email</button>
                 </div>
               </div>
             </div>
