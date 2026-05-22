@@ -1,5 +1,5 @@
 // ============================================================================
-//  GROUNDED — Firebase backend module (V15, May 2026)
+//  GROUNDED — Firebase backend module (V27 / v27.0, May 2026)
 //  ----------------------------------------------------------------------------
 //  Pure ES module. Load it from grounded.html as:
 //
@@ -67,6 +67,7 @@ import {
   signInWithPopup,
   signOut as fbSignOut,
   sendPasswordResetEmail,
+  sendEmailVerification as fbSendEmailVerification,
   updateProfile,
   updatePassword,
   verifyBeforeUpdateEmail,
@@ -641,6 +642,23 @@ const groundedAuth = {
   async sendPasswordReset(email) {
     try {
       await sendPasswordResetEmail(auth, email);
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, code: e.code, error: e.message };
+    }
+  },
+
+  /**
+   * V27/C1 — Send the email verification link to the currently signed-in
+   * user. Called by V50 SignUpScreen post-createUserWithEmailAndPassword
+   * and by the Account Settings ResendVerifyButton. No-op for Google-only
+   * users (currentUser.emailVerified is already true natively).
+   */
+  async sendEmailVerification() {
+    if (!currentUser) return { ok: false, code: "no-user" };
+    if (currentUser.emailVerified) return { ok: false, code: "already-verified" };
+    try {
+      await fbSendEmailVerification(currentUser);
       return { ok: true };
     } catch (e) {
       return { ok: false, code: e.code, error: e.message };

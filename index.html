@@ -6036,16 +6036,28 @@
           }
         } catch (e) {}
 
-        // V49.1 Fix #3: post-signup Trial Welcome (email + Google paths).
-        // Flag set in SignUp success branch and Google sign-in handler.
+        // V49.1 Fix #3 + V50 Fix #C1: post-signup Trial Welcome — gated on
+        // emailVerified. Email signups arrive with emailVerified=false and
+        // must be routed to verify_email; the flag is held in localStorage
+        // so VerifyEmailScreen.onContinueWhenVerified can consume it on the
+        // next hydration pass (when reload() reports emailVerified=true).
+        // Google signups land here natively verified → fall through to TW.
         // Skip for existing users — if mirrorBaselineDate is set, they're
         // returning, not new — clear flag without showing TW.
         try {
           if (user && localStorage.getItem('grounded_show_trial_welcome') === '1') {
-            localStorage.removeItem('grounded_show_trial_welcome');
             const _isExistingUser = !!(liveData && liveData.mirrorBaselineDate);
-            if (!_isExistingUser && PHASE_2_TRIAL_UI_ENABLED) {
+            if (_isExistingUser || !PHASE_2_TRIAL_UI_ENABLED) {
+              // Existing user or Phase 2 disabled — clear flag without TW.
+              localStorage.removeItem('grounded_show_trial_welcome');
+            } else if (user.emailVerified) {
+              // Verified (Google or email user who completed verification) → TW.
+              localStorage.removeItem('grounded_show_trial_welcome');
               next = 'trial_welcome';
+            } else {
+              // V50/C1: unverified email signup → verify_email. Keep the
+              // flag so the post-verification hydration pass routes through TW.
+              next = 'verify_email';
             }
           }
         } catch (e) {}
@@ -6703,7 +6715,14 @@
         // new users via existing hydration flag) when verified.
         case 'verify_email':
           view = <VerifyEmailScreen
-            email={(verifyEmailContext && verifyEmailContext.email) || ''}
+            // V50/C1 polish: fallback to auth.currentUser.email when context
+            // is null (case where hydration watcher routes here directly,
+            // bypassing the SignUp onSubmitted callback that sets context).
+            email={
+              (verifyEmailContext && verifyEmailContext.email) ||
+              (groundedApi && groundedApi.groundedAuth && groundedApi.groundedAuth.currentUser && groundedApi.groundedAuth.currentUser.email) ||
+              ''
+            }
             groundedAuth={groundedApi && groundedApi.groundedAuth}
             onChangeEmail={() => go('change_email')}
             onContinueWhenVerified={() => {
