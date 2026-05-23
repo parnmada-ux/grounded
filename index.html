@@ -64,7 +64,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <meta name="apple-mobile-web-app-title" content="MindoDay" />
   <meta name="theme-color" content="#5B8A72" />
-  <meta name="description" content="MindoDay — sixty seconds, every day. A private daily self-reflection space for the becoming." />
+  <meta name="description" content="MindoDay — sixty seconds, every day. A private daily practice to feel grounded in who you are." />
   <title>MindoDay — Becoming more at home in who you are.</title>
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -816,6 +816,10 @@
         case 'email-already-exists':
           // Object form so SignUpScreen renders inline "Sign in instead?" link.
           return { message: 'Looks like there’s already an account with this email.', code };
+        // V51 Fix (Parn 22 May 2026): KV-pending — no Firebase user yet, so
+        // "Sign in" would dead-end. Route to inline "Resend verification" instead.
+        case 'signup-pending':
+          return { message: 'You’ve already started signing up with this email.', code };
         case 'auth/invalid-email':
         case 'invalid-email':
           return 'That doesn’t look like an email yet — check the format?';
@@ -1236,17 +1240,48 @@
       // V51: accept both Worker code 'email-already-exists' and the legacy
       // Firebase code 'auth/email-already-in-use' — either triggers the inline
       // "Sign in instead?" link.
-      const errorMessage     = error && (typeof error === 'string' ? error : error.message);
-      const errorIsEmailUsed = !!(error && typeof error === 'object'
-                                  && (error.code === 'email-already-exists'
-                                      || error.code === 'auth/email-already-in-use'));
+      // V51 Fix (Parn 22 May 2026): 'signup-pending' = KV row exists but no
+      // Firebase user yet — route to Resend, not Sign In.
+      const errorMessage           = error && (typeof error === 'string' ? error : error.message);
+      const errorIsEmailUsed       = !!(error && typeof error === 'object'
+                                        && (error.code === 'email-already-exists'
+                                            || error.code === 'auth/email-already-in-use'));
+      const errorIsSignupPending   = !!(error && typeof error === 'object'
+                                        && error.code === 'signup-pending');
+
+      // Resend handler — inline, no separate route. On success, navigate to
+      // VerifyEmailScreen via onSubmitted (same pathway as fresh signup).
+      const handleResend = async () => {
+        if (pending) return;
+        const trimmedEmail = email.trim();
+        if (!trimmedEmail) return;
+        setPending(true);
+        try {
+          const r = await groundedAuth.resendSignupEmail(trimmedEmail);
+          if (!r || !r.ok) {
+            const m = mapAuthError(r && r.code, 'signup');
+            if (m) setError(m);
+            console.warn('[V51/Pattern3B] resendSignupEmail failed:', r && r.code);
+            setPending(false);
+            return;
+          }
+          // Same post-success path as initial /requestSignup.
+          try { localStorage.setItem('grounded_show_trial_welcome', '1'); } catch (e) {}
+          if (onSubmitted) onSubmitted(trimmedEmail);
+          setPending(false);
+        } catch (e) {
+          console.error('[V51/Pattern3B] resendSignupEmail threw:', e);
+          setError('Couldn’t resend. Try again in a moment?');
+          setPending(false);
+        }
+      };
 
       return (
         <div className="phone-frame fade-in">
           <div className="px-6 pt-6 pb-2"><BackArrow onClick={onBack} /></div>
           <div className="flex-1 overflow-y-auto no-scrollbar px-7 pb-4">
             <h2 className="text-[28px] font-serif text-g-charcoal text-center mt-3 mb-2">Create your account</h2>
-            <p className="text-center text-g-gray text-sm mb-6">Sign up to start your MindoDay journey.</p>
+            <p className="text-center text-g-gray text-sm mb-6">Sign up to start your daily practice — and feel grounded in who you are.</p>
 
             <div className="space-y-3">
               <input
@@ -1319,6 +1354,20 @@
                       style={{ color: '#C97C7C' }}
                     >
                       Sign in instead?
+                    </button>
+                  </>
+                )}
+                {errorIsSignupPending && (
+                  <>
+                    {' '}
+                    <button
+                      type="button"
+                      onClick={handleResend}
+                      disabled={pending}
+                      className="underline font-semibold disabled:opacity-50"
+                      style={{ color: '#C97C7C' }}
+                    >
+                      Resend verification email?
                     </button>
                   </>
                 )}
@@ -5090,7 +5139,7 @@
             Your Mirror is built.
           </h2>
           <p className="mt-3 text-g-charcoal text-[17px] leading-relaxed" style={{ maxWidth: '320px' }}>
-            The next 7 days are yours, on us.
+            The next 7 days are yours, on us. <br/>Take five minutes a day to feel grounded.
           </p>
           <p className="mt-3 text-[14px] italic leading-relaxed" style={{ color: '#888888', maxWidth: '300px' }}>
             No card needed. We'll send a gentle<br/>
