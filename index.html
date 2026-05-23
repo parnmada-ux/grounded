@@ -819,7 +819,7 @@
         // V51 Fix (Parn 22 May 2026): KV-pending — no Firebase user yet, so
         // "Sign in" would dead-end. Route to inline "Resend verification" instead.
         case 'signup-pending':
-          return { message: 'You’ve already started signing up with this email.', code };
+          return { message: 'You’ve already started signing up with this email — check your inbox, or tap Resend if you can’t find it.', code };
         case 'auth/invalid-email':
         case 'invalid-email':
           return 'That doesn’t look like an email yet — check the format?';
@@ -1368,6 +1368,28 @@
                       style={{ color: '#C97C7C' }}
                     >
                       Resend verification email?
+                    </button>
+                    {/* V51 overnight (Parn 23 May 2026) — secondary action: if
+                        the user wants to try a different email instead of
+                        resending, clear the form (name/email/password) and
+                        dismiss the banner. Pending flag also blocks this
+                        while a resend is in-flight to avoid losing focus
+                        mid-request. */}
+                    {' · '}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (pending) return;
+                        setName('');
+                        setEmail('');
+                        setPassword('');
+                        setError(null);
+                      }}
+                      disabled={pending}
+                      className="underline disabled:opacity-50"
+                      style={{ color: '#C97C7C' }}
+                    >
+                      Use a different email
                     </button>
                   </>
                 )}
