@@ -14,7 +14,7 @@
   BACKEND COORDINATION REQUIRED — helpers consumed (graceful no-op fallback if absent):
     groundedSync.requestAccountDeletion({ confirmText })
     groundedSync.restoreAccount()
-    groundedSync.deletionStatus(email)
+    groundedSync.checkDeletionStatus(email)  // V51 typo-fix: was 'deletionStatus' — that name never existed on groundedSync, breaking the P4 cool-off check.
     groundedAuth.sendEmailVerification()
     groundedAuth.currentUser.emailVerified
     Worker 403 { error: 'email_not_verified' } on /createCheckoutSession + /changePlan
@@ -62,9 +62,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-  <meta name="apple-mobile-web-app-title" content="Grounded" />
+  <meta name="apple-mobile-web-app-title" content="MindoDay" />
   <meta name="theme-color" content="#5B8A72" />
-  <title>Grounded — Becoming more at home in who you are.</title>
+  <meta name="description" content="MindoDay — sixty seconds, every day. A private daily self-reflection space for the becoming." />
+  <title>MindoDay — Becoming more at home in who you are.</title>
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -679,7 +680,7 @@
     // ============================================================
     const Logo = ({ size = 'lg' }) => {
       const sizes = { md: 'text-4xl', lg: 'text-5xl', xl: 'text-6xl' };
-      return <div className={`font-display text-g-green ${sizes[size]}`}>Grounded</div>;
+      return <div className={`font-display text-g-green ${sizes[size]}`}>MindoDay</div>;
     };
 
     const PillButton = ({ onClick, children, disabled = false, className = '' }) => (
@@ -811,12 +812,27 @@
         case 'auth/network-request-failed':
           return 'Can’t connect right now. Check your internet?';
         case 'auth/email-already-in-use':
+        // V51/Pattern 3B — Worker-mediated signup equivalents.
+        case 'email-already-exists':
           // Object form so SignUpScreen renders inline "Sign in instead?" link.
           return { message: 'Looks like there’s already an account with this email.', code };
         case 'auth/invalid-email':
+        case 'invalid-email':
           return 'That doesn’t look like an email yet — check the format?';
         case 'auth/weak-password':
+        case 'weak-password':
           return 'Try a longer password — 8 characters or more.';
+        // V51/Pattern 3B — Worker couldn't send the verification email
+        // (e.g., transient SendGrid/Postmark hiccup). User-actionable retry.
+        case 'send-failed':
+          return 'Couldn’t send your verification email — try again in a moment?';
+        // V51/Pattern 3B — transport-level failures from Worker calls.
+        case 'fetch-failed':
+        case 'worker-not-configured':
+          return 'Can’t connect right now. Check your internet?';
+        // V51/Pattern 3B — per-IP signup/resend rate limit (5/min from Worker).
+        case 'rate-limited':
+          return 'Too many tries. Take a breath, try again in a minute.';
         // V15/C2: sign-in error codes.
         case 'auth/wrong-password':
         case 'auth/invalid-credential':
@@ -1012,11 +1028,11 @@
         <div className="flex-1 flex flex-col items-center justify-center px-8 pb-20 text-center">
           <div className="text-3xl mb-5">🌿</div>
           <h2 className="text-[26px] font-serif text-g-deep leading-snug">
-            You're exactly who Grounded was made for.
+            You're exactly who MindoDay was made for.
           </h2>
           <div className="card mt-8 px-6 py-6 w-full">
             <p className="text-g-charcoal text-sm leading-relaxed">
-              What you're looking for — clarity, intention, the version of yourself you want to know and become — that's what Grounded is built around.
+              What you're looking for — clarity, intention, the version of yourself you want to know and become — that's what MindoDay is built around.
             </p>
           </div>
           <div className="mt-8 flex flex-col items-center">
@@ -1045,7 +1061,7 @@
           </h2>
           <div className="card mt-6 px-5 py-5 w-full">
             <p className="text-g-charcoal text-sm leading-relaxed text-center">
-              Grounded is built for the moments you want to know yourself a little more. There's no rush — come back when it feels like the right time.
+              MindoDay is built for the moments you want to know yourself a little more. There's no rush — come back when it feels like the right time.
             </p>
           </div>
           <div className="mt-8 flex flex-col items-center gap-5">
@@ -1069,7 +1085,7 @@
           <h2 className="text-[28px] font-serif text-g-deep mb-5 leading-snug">We'll be here.</h2>
           <div className="card px-6 py-5 w-full">
             <p className="text-g-charcoal text-sm leading-relaxed">
-              Whenever you need to remember who you are, Grounded will be waiting.
+              Whenever you need to remember who you are, MindoDay will be waiting.
             </p>
             <p className="text-g-charcoal text-sm leading-relaxed mt-2">Take care of yourself. <span>🌿</span></p>
           </div>
@@ -1104,7 +1120,7 @@
         <div className="px-6 pt-6 pb-2"><BackArrow onClick={onBack} /></div>
         <div className="flex-1 overflow-y-auto no-scrollbar px-6">
           <h2 className="text-[26px] font-serif text-g-charcoal leading-snug mb-5">
-            Here's what Grounded will<br/>help you do:
+            Here's what MindoDay will<br/>help you do:
           </h2>
           <div className="space-y-4 pb-3">
             {PROMISE_CARDS.map(c => (
@@ -1125,16 +1141,28 @@
     );
 
     // ============================================================
-    // 4A. SIGN UP (V15/C1 — wired to groundedAuth.signUpWithEmail)
+    // 4A. SIGN UP (V51/Pattern 3B — wired to groundedAuth.requestSignup)
     // ============================================================
     // Strips V14's fake social buttons (Google now lives on Welcome; Apple/FB
     // deferred per F2). Display name optional. Show-password toggle for typo
     // catching without a confirm field. Submit gates on email format + 8+ char
     // password. B2-style spinner inside button + warm error banner on failure.
-    // On 'auth/email-already-in-use' the banner gets an inline "Sign in instead?"
-    // link that pre-fills the email on the sign-in screen via App's
-    // signInPrefill state. On success: A3+J1 listener fires → resolver routes
-    // to mirror onboarding ('values'), no manual navigation needed here.
+    //
+    // V51/Pattern 3B — DEFERRED ACCOUNT CREATION
+    //   Calls groundedAuth.requestSignup (POST {WORKER_URL}/requestSignup) —
+    //   NO Firebase Auth user is created here. Worker stores a pending-signup
+    //   row keyed by email and sends a verification email. SignUp routes to
+    //   verify_email; user clicks link → boot-time deep-link handler calls
+    //   completeSignup → Firebase user is born → onAuthChange fires → existing
+    //   hydration watcher routes through Trial Welcome.
+    //
+    //   On 'email-already-exists' (or legacy 'auth/email-already-in-use') the
+    //   banner gets an inline "Sign in instead?" link that pre-fills the email
+    //   on the sign-in screen via App's signInPrefill state. P4 cool-off check
+    //   still runs against the duplicate path.
+    //
+    //   onSubmitted(email) now passes the typed email so the App can populate
+    //   verifyEmailContext directly — there's no currentUser to inspect yet.
     const SignUpScreen = ({ groundedAuth, onSubmitted, onSignIn, onSignInInstead, onBack, onDuplicateEmailScheduledCheck }) => {
       const [name, setName]         = useState('');
       const [email, setEmail]       = useState('');
@@ -1152,21 +1180,27 @@
         setError(null);
         setPending(true);
         try {
-          if (!groundedAuth || !groundedAuth.signUpWithEmail) {
+          if (!groundedAuth || typeof groundedAuth.requestSignup !== 'function') {
             // Defensive: should never hit since signup route is auth-aware.
+            // (Fallback mode would mean firebase.js never resolved — no Worker
+            // either, so we can't proceed regardless.)
             setError('Couldn’t create account. Try again?');
             setPending(false);
             return;
           }
-          const r = await groundedAuth.signUpWithEmail(email.trim(), password, name.trim());
+          const trimmedEmail = email.trim();
+          const r = await groundedAuth.requestSignup(trimmedEmail, password, name.trim());
           if (!r || !r.ok) {
-            // V50 Fix #P4: email-already-in-use → check Backend deletion status.
-            // If the email belongs to a scheduled-for-deletion account, surface
-            // recovery modal instead of generic error. Otherwise standard flow.
-            if (r && r.code === 'auth/email-already-in-use'
-                && typeof onDuplicateEmailScheduledCheck === 'function') {
+            // V50 Fix #P4 (carried into V51): duplicate-email → check Backend
+            // deletion status. If the email belongs to a scheduled-for-deletion
+            // account, surface recovery modal instead of generic error. Worker
+            // now emits 'email-already-exists'; legacy 'auth/email-already-in-use'
+            // kept as fallback in case the deprecated path ever fires.
+            const isDup = r && (r.code === 'email-already-exists'
+                              || r.code === 'auth/email-already-in-use');
+            if (isDup && typeof onDuplicateEmailScheduledCheck === 'function') {
               try {
-                const dups = await onDuplicateEmailScheduledCheck(email.trim());
+                const dups = await onDuplicateEmailScheduledCheck(trimmedEmail);
                 if (dups && dups.scheduled) {
                   // App-level modal will surface; component just clears pending
                   // and lets the parent route as needed.
@@ -1177,59 +1211,42 @@
             }
             const m = mapAuthError(r && r.code, 'signup');
             if (m) setError(m);
-            console.warn('[C1] signUpWithEmail failed:', r && r.code);
+            console.warn('[V51/Pattern3B] requestSignup failed:', r && r.code);
             setPending(false);
             return;
           }
-          // V49.1 Fix #3: signal that post-auth router should show Trial Welcome
-          // (consumed in hydration watcher after email verification — V50/C1).
+          // V49.1 Fix #3 (carried into V51): signal that post-auth router
+          // should show Trial Welcome. Consumed in hydration watcher AFTER
+          // the user clicks the verification link → completeSignup fires →
+          // onAuthChange → hydration sees user.emailVerified === true.
           try { localStorage.setItem('grounded_show_trial_welcome', '1'); } catch (e) {}
-          // V50 Fix #C1: send verification email. Don't block on failure —
-          // user can retry from VerifyEmailScreen. Routing to verify_email
-          // happens via onSubmitted callback below (App router intercepts).
-          try {
-            if (groundedAuth.sendEmailVerification) {
-              await groundedAuth.sendEmailVerification();
-            }
-          } catch (e) {
-            console.warn('[V50/C1] sendEmailVerification threw:', e);
-          }
-          // V49.1 Fix #4: explicit wait for groundedAuth.currentUser before
-          // signaling done. Defensive against the race where A3 listener
-          // attaches mid-flight and misses the auth event on first attempt.
-          const _waitStart = Date.now();
-          while (Date.now() - _waitStart < 5000) {
-            if (groundedAuth.currentUser) break;
-            await new Promise(r => setTimeout(r, 50));
-          }
-          if (!groundedAuth.currentUser) {
-            setError('Sign up is taking longer than usual, please try again.');
-            setPending(false);
-            return;
-          }
-          // On success: A3+J1 listener fires → routes per Fix #2/#3. Component unmounts.
-          if (onSubmitted) onSubmitted();
-          // Defensive: clear pending in case the listener is delayed (e.g., backend
-          // ack arrives but auth-state event lags). Component will unmount on route,
-          // so this is mostly preventive — React 18 silently no-ops on unmounted.
+          // V51: hand the typed email up to the App router so it can populate
+          // verifyEmailContext directly (no currentUser to read from yet).
+          if (onSubmitted) onSubmitted(trimmedEmail);
+          // Defensive clear — component unmounts on route, React 18 no-ops.
           setPending(false);
         } catch (e) {
-          console.error('[C1] signUpWithEmail threw:', e);
+          console.error('[V51/Pattern3B] requestSignup threw:', e);
           setError('Couldn’t create account. Try again?');
           setPending(false);
         }
       };
 
       // Banner shape handling: string vs object (with code for inline action).
+      // V51: accept both Worker code 'email-already-exists' and the legacy
+      // Firebase code 'auth/email-already-in-use' — either triggers the inline
+      // "Sign in instead?" link.
       const errorMessage     = error && (typeof error === 'string' ? error : error.message);
-      const errorIsEmailUsed = !!(error && typeof error === 'object' && error.code === 'auth/email-already-in-use');
+      const errorIsEmailUsed = !!(error && typeof error === 'object'
+                                  && (error.code === 'email-already-exists'
+                                      || error.code === 'auth/email-already-in-use'));
 
       return (
         <div className="phone-frame fade-in">
           <div className="px-6 pt-6 pb-2"><BackArrow onClick={onBack} /></div>
           <div className="flex-1 overflow-y-auto no-scrollbar px-7 pb-4">
             <h2 className="text-[28px] font-serif text-g-charcoal text-center mt-3 mb-2">Create your account</h2>
-            <p className="text-center text-g-gray text-sm mb-6">Sign up to start your Grounded journey.</p>
+            <p className="text-center text-g-gray text-sm mb-6">Sign up to start your MindoDay journey.</p>
 
             <div className="space-y-3">
               <input
@@ -1446,7 +1463,7 @@
           <div className="px-6 pt-6 pb-2"><BackArrow onClick={onBack} /></div>
           <div className="flex-1 overflow-y-auto no-scrollbar px-7 pb-4">
             <h2 className="text-[28px] font-serif text-g-charcoal text-center mt-3 mb-2">Welcome back</h2>
-            <p className="text-center text-g-gray text-sm mb-6">Sign in to your Grounded account.</p>
+            <p className="text-center text-g-gray text-sm mb-6">Sign in to your MindoDay account.</p>
 
             <div className="space-y-3">
               <input
@@ -2707,7 +2724,7 @@
               )}
             </div>
             <p className="text-g-charcoal text-sm leading-relaxed pb-4">
-              💡 Coming soon:<br/>Friend matching &amp; Grounded events
+              💡 Coming soon:<br/>Friend matching &amp; MindoDay events
             </p>
             <div className="text-center pb-6">
               <button onClick={onHistory} className="text-g-deep text-sm underline font-semibold">📅 View my history →</button>
@@ -3735,7 +3752,7 @@
       // ── TRIAL mode (default + pre-M2 fallback) ────────────────────
       else {
         const daysText = (typeof trialDaysLeft === 'number')
-          ? `${trialDaysLeft} day${trialDaysLeft === 1 ? '' : 's'} of Grounded left`
+          ? `${trialDaysLeft} day${trialDaysLeft === 1 ? '' : 's'} of MindoDay left`
           : 'Your trial is active.';
         body = (
           <>
@@ -4303,7 +4320,7 @@
                 <ul className="text-g-charcoal text-sm leading-relaxed pl-2 mb-5 space-y-1">
                   <li>— Your Mirror, reflections, and practice history</li>
                   <li>— Your subscription (will not renew during the 30-day window)</li>
-                  <li>— Your access to Grounded</li>
+                  <li>— Your access to MindoDay</li>
                 </ul>
                 <div className="flex flex-col items-center gap-3">
                   <PillButton onClick={() => setShowDelete(false)}>Keep my account</PillButton>
@@ -4889,13 +4906,13 @@
               <h4 className="font-bold text-g-charcoal text-[14px] mb-2">💬 CONTACT US</h4>
               <div className="border-t border-g-line pt-3">
                 <p className="text-g-charcoal text-sm leading-relaxed">Questions or feedback?</p>
-                <p className="text-g-charcoal text-sm leading-relaxed underline">hello@grounded.app</p>
+                <p className="text-g-charcoal text-sm leading-relaxed underline">hello@mindoday.com</p>
               </div>
             </div>
             <div className="card-outline p-5">
-              <h4 className="font-bold text-g-charcoal text-[14px] mb-2">ℹ️ ABOUT GROUNDED</h4>
+              <h4 className="font-bold text-g-charcoal text-[14px] mb-2">ℹ️ ABOUT MINDODAY</h4>
               <div className="border-t border-g-line pt-3 space-y-3">
-                <p className="text-g-charcoal text-sm leading-relaxed">Grounded is a self-reflection tool, not a replacement for professional mental health support.</p>
+                <p className="text-g-charcoal text-sm leading-relaxed">MindoDay is a self-reflection tool, not a replacement for professional mental health support.</p>
                 <p className="text-g-charcoal text-sm leading-relaxed">If you're struggling, please reach out to a licensed therapist or counselor.</p>
                 <p className="text-g-charcoal text-sm leading-relaxed">We're here to help you remember who you are — not to treat or diagnose.</p>
               </div>
@@ -4922,7 +4939,7 @@
           letterSpacing: '0.02em',
           fontWeight: 600,
         }}>
-          Grounded
+          MindoDay
         </div>
       </div>
     );
@@ -5053,7 +5070,7 @@
             letterSpacing: '0.01em',
             lineHeight: 1.0,
           }}>
-            Grounded
+            MindoDay
           </h1>
           <p className="mt-2 text-g-charcoal text-[14px] italic px-2 leading-snug">
             Becoming more at home in who you are.
@@ -5261,8 +5278,8 @@
     const TrialBanner = ({ daysLeft, onAction }) => {
       const isLast = daysLeft <= 1;
       const text = daysLeft === 1
-        ? '1 day of Grounded left — pick your path'
-        : `${daysLeft} days of Grounded left`;
+        ? '1 day of MindoDay left — pick your path'
+        : `${daysLeft} days of MindoDay left`;
       return (
         <button
           onClick={onAction}
@@ -5488,7 +5505,7 @@
                 </li>
               </ul>
               <p className="mt-3 text-[12.5px] italic leading-relaxed" style={{ color: '#888888' }}>
-                More tools coming as Grounded grows.
+                More tools coming as MindoDay grows.
               </p>
               <button
                 onClick={() => handleClick('pro')}
@@ -5547,7 +5564,7 @@
         <div className="flex-1 flex items-center justify-center text-center px-8">
           <div>
             <h2 className="font-serif text-[26px] text-g-deep mb-3" style={{ maxWidth: '320px' }}>
-              Your time with Grounded — let's continue
+              Your time with MindoDay — let's continue
             </h2>
             <p className="text-g-charcoal text-sm leading-relaxed" style={{ maxWidth: '280px' }}>
               Becoming more at home in who you are takes time.
@@ -5558,41 +5575,29 @@
     );
 
     // ============================================================
-    // V50 Fix #C1 — VERIFY EMAIL SCREEN
-    // Renders after email signup. Polls auth.currentUser.emailVerified
-    // (refresh-on-tick via reload()) and auto-routes to home (which kicks
-    // into TW for new users via hydration watcher) when flipped true.
-    // Resend button has 60s cooldown to prevent abuse.
+    // V51 / Pattern 3B — VERIFY EMAIL SCREEN
     // ============================================================
-    const VerifyEmailScreen = ({ email, groundedAuth, onChangeEmail, onContinueWhenVerified }) => {
+    // Renders after requestSignup succeeds. NO Firebase user exists at this
+    // point — user is materialized by the boot-time deep-link handler when
+    // they click the verification link in their email.
+    //
+    // Key differences from V50:
+    //   • No polling. There's no user to poll — user.emailVerified can't flip
+    //     true without a user existing.
+    //   • No "I've verified — continue" button. User cannot manually advance
+    //     from this screen; only clicking the email link can complete signup.
+    //   • Resend calls Worker /resendSignup (not Firebase sendEmailVerification).
+    //   • "Wrong email? Change it" calls Worker /cancelSignup to invalidate
+    //     the pending token, then routes back to signup. Fire-and-mostly-forget:
+    //     even if the call fails (network blip), we still navigate so the user
+    //     isn't stuck.
+    //
+    // Email is required as a prop — it's the canonical handle for the resend/
+    // cancel Worker calls (FE never sees the token; only the email knows it).
+    const VerifyEmailScreen = ({ email, groundedAuth, onChangeEmail }) => {
       const [resendCooldown, setResendCooldown] = useState(60);
       const [resendStatus, setResendStatus] = useState('idle'); // idle | sending | sent | error
-      const [checking, setChecking] = useState(false);
-
-      // V50/C1: poll emailVerified status every 4s. Use auth.currentUser.reload()
-      // to fetch latest verification state from Firebase. When verified, hand off.
-      useEffect(() => {
-        if (!groundedAuth || !groundedAuth.currentUser) return;
-        let stopped = false;
-        const tick = async () => {
-          if (stopped) return;
-          try {
-            if (typeof groundedAuth.reloadCurrentUser === 'function') {
-              await groundedAuth.reloadCurrentUser();
-            } else if (groundedAuth.currentUser && typeof groundedAuth.currentUser.reload === 'function') {
-              await groundedAuth.currentUser.reload();
-            }
-            if (groundedAuth.currentUser && groundedAuth.currentUser.emailVerified) {
-              if (!stopped) onContinueWhenVerified();
-              return;
-            }
-          } catch (e) { /* network blip — keep polling */ }
-        };
-        const interval = setInterval(tick, 4000);
-        // First check immediately
-        tick();
-        return () => { stopped = true; clearInterval(interval); };
-      }, [groundedAuth, onContinueWhenVerified]);
+      const [cancelling, setCancelling] = useState(false);
 
       // Cooldown timer
       useEffect(() => {
@@ -5603,63 +5608,71 @@
 
       const handleResend = async () => {
         if (resendCooldown > 0 || resendStatus === 'sending') return;
+        if (!email) {
+          // Defensive: if context was lost (page reload), we can't resend.
+          // User should use "Wrong email? Change it" to start over.
+          setResendStatus('error');
+          setTimeout(() => setResendStatus('idle'), 3000);
+          return;
+        }
         setResendStatus('sending');
         try {
-          if (groundedAuth && typeof groundedAuth.sendEmailVerification === 'function') {
-            await groundedAuth.sendEmailVerification();
-            setResendStatus('sent');
-            setResendCooldown(60);
-            setTimeout(() => setResendStatus('idle'), 3000);
+          if (groundedAuth && typeof groundedAuth.resendSignupEmail === 'function') {
+            const r = await groundedAuth.resendSignupEmail(email);
+            if (r && r.ok) {
+              setResendStatus('sent');
+              setResendCooldown(60);
+              setTimeout(() => setResendStatus('idle'), 3000);
+            } else {
+              console.warn('[V51/Pattern3B] resendSignupEmail failed:', r && r.code);
+              setResendStatus('error');
+              setTimeout(() => setResendStatus('idle'), 3000);
+            }
           } else {
-            // Pre-Backend helper fallback — flag so it's visible in test
+            // firebase.js never resolved or method missing — fallback-mode
             setResendStatus('error');
             setTimeout(() => setResendStatus('idle'), 3000);
           }
         } catch (e) {
-          console.warn('[V50/C1] resend verification threw:', e);
+          console.warn('[V51/Pattern3B] resendSignupEmail threw:', e);
           setResendStatus('error');
           setTimeout(() => setResendStatus('idle'), 3000);
         }
       };
 
-      const handleManualCheck = async () => {
-        if (checking || !groundedAuth || !groundedAuth.currentUser) return;
-        setChecking(true);
+      const handleChangeEmail = async () => {
+        if (cancelling) return;
+        setCancelling(true);
+        // Best-effort token invalidation — we still navigate even on failure.
+        // The Worker enforces a TTL so stale tokens expire naturally anyway.
         try {
-          if (groundedAuth.currentUser && typeof groundedAuth.currentUser.reload === 'function') {
-            await groundedAuth.currentUser.reload();
+          if (email && groundedAuth && typeof groundedAuth.cancelSignup === 'function') {
+            await groundedAuth.cancelSignup(email);
           }
-          if (groundedAuth.currentUser && groundedAuth.currentUser.emailVerified) {
-            onContinueWhenVerified();
-            return;
-          }
-        } catch (e) { /* ignore */ }
-        setChecking(false);
+        } catch (e) {
+          console.warn('[V51/Pattern3B] cancelSignup threw (proceeding anyway):', e);
+        }
+        if (typeof onChangeEmail === 'function') onChangeEmail();
+        // Component will unmount on route; setCancelling guarded by mount.
       };
 
       return (
         <div className="phone-frame fade-in" style={{ backgroundColor: '#F0F7F4' }}>
           <div className="flex-1 flex flex-col items-center justify-center px-8 pb-20 text-center">
             <div className="text-3xl mb-5">📧</div>
-            <h2 className="text-[28px] font-serif font-semibold text-g-deep mb-4 leading-snug">One more step</h2>
+            <h2 className="text-[28px] font-serif font-semibold text-g-deep mb-4 leading-snug">Check your email</h2>
             <div className="card px-6 py-5 w-full">
               <p className="text-g-charcoal text-sm leading-relaxed">
                 We sent a verification link to <span className="font-semibold text-g-deep">{email || 'your email'}</span>.
               </p>
               <p className="text-g-charcoal text-sm leading-relaxed mt-3">
-                Click it to start your trial.
+                Click the link to finish setting up your account.
               </p>
             </div>
             <div className="mt-7 flex flex-col items-center gap-3 w-full">
               <button
-                onClick={handleManualCheck}
-                disabled={checking}
-                className="text-g-deep text-sm underline font-semibold disabled:opacity-50">
-                {checking ? 'Checking…' : "I've verified — continue"}
-              </button>
-              <button
                 onClick={handleResend}
-                disabled={resendCooldown > 0 || resendStatus === 'sending'}
+                disabled={resendCooldown > 0 || resendStatus === 'sending' || !email}
                 className="text-g-deep text-sm underline disabled:opacity-50 disabled:no-underline disabled:text-g-gray">
                 {resendStatus === 'sent' ? 'Verification email sent ✓'
                   : resendStatus === 'sending' ? 'Sending…'
@@ -5668,13 +5681,16 @@
                   : 'Resend email'}
               </button>
               {onChangeEmail && (
-                <button onClick={onChangeEmail} className="text-g-gray text-sm underline">
-                  Wrong email? Change it
+                <button
+                  onClick={handleChangeEmail}
+                  disabled={cancelling}
+                  className="text-g-gray text-sm underline disabled:opacity-50">
+                  {cancelling ? 'Cancelling…' : 'Wrong email? Change it'}
                 </button>
               )}
             </div>
             <p className="text-center text-g-gray text-xs italic mt-7 px-4">
-              You can leave this page — we'll let you in once you've verified.
+              You can close this tab — clicking the link in your email will sign you in.
             </p>
           </div>
         </div>
@@ -5738,6 +5754,12 @@
       // every data-change re-render would re-trigger the sweep effect (because
       // it depends on `data`), creating a feedback loop.
       const autoSubmitRanRef = useRef(false);
+
+      // V51/Pattern 3B: run-once guard for the boot-time signup-token handler.
+      // Mirrors the returnUrlRanRef pattern below — without it, re-renders
+      // triggered by the completeSignup → onAuthChange → setData chain could
+      // re-fire the handler against an already-cleared URL.
+      const signupTokenRanRef = useRef(false);
 
       // V49/M2: run-once guard for the boot-time return-URL handler. The handler
       // reads ?checkout=success|cancel and ?portal=return params, clears them
@@ -5997,6 +6019,21 @@
             // Initial fire with no user = anonymous mode. Route immediately:
             //   - no topValues → 'welcome' (matches default useState, no-op)
             //   - has topValues in localStorage → 'home' (returning anon user)
+            // V51/Pattern 3B: EXCEPT when URL carries ?token=… — that means
+            // the signup-token deep-link handler is about to call
+            // completeSignup → signInWithCustomToken → a real user will
+            // arrive in the very next onAuthChange tick. Don't route to
+            // welcome (would cause a visible flash). The deep-link handler
+            // takes responsibility for unblocking the splash on failure.
+            let _hasSignupToken = false;
+            try {
+              if (typeof window !== 'undefined' && window.location) {
+                _hasSignupToken = new URLSearchParams(window.location.search).has('token');
+              }
+            } catch (e) {}
+            if (_hasSignupToken) {
+              return;   // splash stays up; deep-link handler owns resolution
+            }
             setAwaitingHydration(false);
             setAuthResolved(true);
             setScreen(next);
@@ -6036,14 +6073,18 @@
           }
         } catch (e) {}
 
-        // V49.1 Fix #3 + V50 Fix #C1: post-signup Trial Welcome — gated on
-        // emailVerified. Email signups arrive with emailVerified=false and
-        // must be routed to verify_email; the flag is held in localStorage
-        // so VerifyEmailScreen.onContinueWhenVerified can consume it on the
-        // next hydration pass (when reload() reports emailVerified=true).
-        // Google signups land here natively verified → fall through to TW.
-        // Skip for existing users — if mirrorBaselineDate is set, they're
-        // returning, not new — clear flag without showing TW.
+        // V49.1 Fix #3 + V51/Pattern 3B: post-signup Trial Welcome — gated
+        // on emailVerified. The flag is set by SignUpScreen on requestSignup
+        // success (same-device flow) and also by the deep-link handler on
+        // ?token=… consumption (cross-device flow). Under V51 the user only
+        // appears AFTER completeSignup signs them in, and the Worker has
+        // already set emailVerified:true on the Auth user record via Admin
+        // SDK — so the emailVerified=true branch is the V51 happy path.
+        // The emailVerified=false branch is now a defensive safety net for
+        // any legacy state where a flagged user somehow lacks verification
+        // (shouldn't fire in normal V51 flow). Google signups land here
+        // natively verified → also go through the TW branch. Existing users
+        // (mirrorBaselineDate present) bypass TW — they're returning, not new.
         try {
           if (user && localStorage.getItem('grounded_show_trial_welcome') === '1') {
             const _isExistingUser = !!(liveData && liveData.mirrorBaselineDate);
@@ -6051,12 +6092,13 @@
               // Existing user or Phase 2 disabled — clear flag without TW.
               localStorage.removeItem('grounded_show_trial_welcome');
             } else if (user.emailVerified) {
-              // Verified (Google or email user who completed verification) → TW.
+              // V51 happy path: Verified (custom-token signin from
+              // completeSignup, or natively-verified Google signup) → TW.
               localStorage.removeItem('grounded_show_trial_welcome');
               next = 'trial_welcome';
             } else {
-              // V50/C1: unverified email signup → verify_email. Keep the
-              // flag so the post-verification hydration pass routes through TW.
+              // Defensive safety net (shouldn't fire under V51). Keep the
+              // flag so a future hydration pass can promote to TW.
               next = 'verify_email';
             }
           }
@@ -6166,6 +6208,139 @@
           if (next) setData(prev => ({ ...prev, dailyQuestion: next }));
         }
       }, [data.dailyQuestion, data.topValues]);
+
+      // V51/Pattern 3B: signup-token deep-link handler. Fires once at boot
+      // when URL carries ?token=…  — that means the user clicked the
+      // verification link in their email. Calls completeSignup, which
+      // (on success) signInWithCustomToken's the user → existing onAuthChange
+      // listener fires → hydration watcher routes through Trial Welcome via
+      // the localStorage flag mechanism (SignUpScreen set it on
+      // requestSignup success, or we set it here for cross-device flows).
+      //
+      // Note: this effect does NOT gate on authResolved. The A3 listener
+      // above defers initial routing when it sees ?token in the URL — splash
+      // stays up while completeSignup runs, no welcome-flash.
+      //
+      // Errors:
+      //   token-used  + signed in   → silent success (already authed, ignore)
+      //   token-used  + not signed in → "link already used" toast → signup
+      //   token-expired              → "link expired" toast → signup
+      //   token-invalid / other      → "invalid link" toast → signup
+      useEffect(() => {
+        if (bootState !== 'ready') return;
+        if (signupTokenRanRef.current) return;
+        if (typeof window === 'undefined' || !window.location) return;
+
+        const params = new URLSearchParams(window.location.search);
+        const token = params.get('token');
+        if (!token) return;     // nothing to handle — common path
+
+        signupTokenRanRef.current = true;
+
+        // Strip the token from the URL immediately so a hard refresh during
+        // the call doesn't replay it (and so the token doesn't sit in the
+        // address bar where the user could share/screenshot it). The other
+        // ?checkout / ?portal params (if any) are stripped by the V49/M2
+        // handler below — both handlers use replaceState idempotently.
+        try {
+          const remaining = new URLSearchParams(window.location.search);
+          remaining.delete('token');
+          const newSearch = remaining.toString();
+          const newUrl = window.location.pathname + (newSearch ? ('?' + newSearch) : '');
+          window.history.replaceState({}, '', newUrl);
+        } catch (e) { /* defensive — older browsers */ }
+
+        // Set the TW flag pre-emptively so the hydration watcher routes the
+        // newly-signed-in user through Trial Welcome. SignUpScreen also sets
+        // this on same-device flows; we set it here for cross-device flows
+        // (signed up on phone, clicked link on laptop). Idempotent — '1' set
+        // twice is still '1'.
+        try { localStorage.setItem('grounded_show_trial_welcome', '1'); } catch (e) {}
+
+        (async () => {
+          const _auth = groundedApi && groundedApi.groundedAuth;
+          if (!_auth || typeof _auth.completeSignup !== 'function') {
+            // firebase.js never resolved — V14 fallback can't complete signup.
+            // Release the splash gate and route to signup with an error toast.
+            setAuthResolved(true);
+            setReturnNotice('Couldn’t verify your account — please sign up again.');
+            setTimeout(() => setReturnNotice(null), 4000);
+            try { localStorage.removeItem('grounded_show_trial_welcome'); } catch (e) {}
+            try { setScreen('signup'); } catch (e) {}
+            return;
+          }
+
+          let r;
+          try {
+            r = await _auth.completeSignup(token);
+          } catch (e) {
+            console.error('[V51/Pattern3B] completeSignup threw:', e);
+            r = { ok: false, code: 'fetch-failed', error: e && e.message };
+          }
+
+          if (r && r.ok) {
+            // V51/Pattern 3B — needsManualSignIn fallback. The Worker
+            // created the Auth user successfully but failed to mint a
+            // custom sign-in token. User exists in Firebase; we just need
+            // them to enter their password. Prefill the signin form and
+            // surface a soft toast explaining what happened.
+            if (r.needsManualSignIn === true) {
+              // Clear the TW flag — we'll re-set it after they successfully
+              // signin via the normal SignInScreen → A3 listener flow.
+              try { localStorage.removeItem('grounded_show_trial_welcome'); } catch (e) {}
+              if (r.email) setSignInPrefill(r.email);
+              setAuthResolved(true);
+              setReturnNotice('Almost there — sign in with the password you just chose.');
+              setTimeout(() => setReturnNotice(null), 5000);
+              try { setScreen('signin'); } catch (e) {}
+              return;
+            }
+            // Happy path: signInWithCustomToken inside completeSignup fired
+            // onAuthStateChanged → A3 listener saw a real user →
+            // setAwaitingHydration(true). Hydration watcher will take over
+            // routing once Firestore syncs. Nothing more to do here.
+            return;
+          }
+
+          // Failure paths. Clear TW flag (user isn't going through TW yet).
+          try { localStorage.removeItem('grounded_show_trial_welcome'); } catch (e) {}
+
+          const failureCode = r && r.code;
+
+          if (failureCode === 'token-used') {
+            // Token was already consumed. If a user is currently signed in,
+            // assume they're the same person clicking an old/duplicate link
+            // → silent success. Otherwise, gently surface and route to signup.
+            const isSignedIn = !!(_auth.currentUser);
+            if (isSignedIn) {
+              // Splash should already be released by the A3 listener on the
+              // previous sign-in event. Defensive nudge in case it isn't.
+              setAuthResolved(true);
+              return;
+            }
+            setAuthResolved(true);
+            setReturnNotice('This link has already been used. Try signing in.');
+            setTimeout(() => setReturnNotice(null), 4000);
+            try { setScreen('signin'); } catch (e) {}
+            return;
+          }
+
+          if (failureCode === 'token-expired') {
+            setAuthResolved(true);
+            setReturnNotice('Your verification link expired — please sign up again.');
+            setTimeout(() => setReturnNotice(null), 4000);
+            try { setScreen('signup'); } catch (e) {}
+            return;
+          }
+
+          // token-invalid, fetch-failed, no-custom-token, anything else.
+          console.warn('[V51/Pattern3B] completeSignup failed:', failureCode, r && r.error);
+          setAuthResolved(true);
+          setReturnNotice('Couldn’t verify that link — please sign up again.');
+          setTimeout(() => setReturnNotice(null), 4000);
+          try { setScreen('signup'); } catch (e) {}
+        })();
+      }, [bootState, groundedApi]);
 
       // V49/M2: post-checkout / post-portal return handler. Fires once at
       // boot — reads ?checkout=success | ?checkout=cancel | ?portal=return
@@ -6666,29 +6841,39 @@
           // SignIn↔SignUp toggle context.
           view = <SignUpScreen
             groundedAuth={groundedApi && groundedApi.groundedAuth}
-            onSubmitted={() => {
-              // V50 Fix #C1: route to verify_email screen post-signup. Capture
-              // the user's email for display + retain auth context so the
-              // verification poll has groundedAuth.currentUser to inspect.
-              const currentEmail = (groundedApi && groundedApi.groundedAuth
-                && groundedApi.groundedAuth.currentUser
-                && groundedApi.groundedAuth.currentUser.email) || '';
-              setVerifyEmailContext({ email: currentEmail });
+            onSubmitted={(submittedEmail) => {
+              // V51/Pattern 3B: route to verify_email screen post-requestSignup.
+              // No Firebase user exists yet — capture the email straight from
+              // SignUpScreen (it's the source of truth at this point). Falls
+              // back to groundedAuth.currentUser.email only if the param is
+              // missing for some defensive reason (shouldn't happen in V51).
+              const emailToShow = submittedEmail
+                || (groundedApi && groundedApi.groundedAuth
+                    && groundedApi.groundedAuth.currentUser
+                    && groundedApi.groundedAuth.currentUser.email)
+                || '';
+              setVerifyEmailContext({ email: emailToShow });
               go('verify_email');
             }}
             onSignIn={() => go('signin')}
             onSignInInstead={(email) => { setSignInPrefill(email); go('signin'); }}
             onBack={goBack}
             // V50 Fix #P4: pass duplicate-email-scheduled-for-deletion check.
-            // SignUp calls this on auth/email-already-in-use; if scheduled,
-            // we surface modal and SignUpScreen clears its pending state.
+            // SignUp calls this on auth/email-already-in-use (or V51 Worker
+            // code 'email-already-exists'); if scheduled, we surface modal
+            // and SignUpScreen clears its pending state.
+            //
+            // V51 bug fix: method name was 'deletionStatus' (typo, never
+            // existed on groundedSync) — corrected to 'checkDeletionStatus'.
+            // Before this fix, the typeof guard always returned false and
+            // the P4 recovery flow silently fell through to standard error.
             onDuplicateEmailScheduledCheck={async (emailAddr) => {
               const _sync = groundedApi && groundedApi.groundedSync;
-              if (!_sync || typeof _sync.deletionStatus !== 'function') {
+              if (!_sync || typeof _sync.checkDeletionStatus !== 'function') {
                 return { scheduled: false };
               }
               try {
-                const r = await _sync.deletionStatus(emailAddr);
+                const r = await _sync.checkDeletionStatus(emailAddr);
                 if (r && r.scheduled) {
                   setDuplicateEmailModal({
                     email: emailAddr,
@@ -6696,7 +6881,7 @@
                   });
                   return { scheduled: true };
                 }
-              } catch (e) { console.warn('[V50/P4] deletionStatus threw:', e); }
+              } catch (e) { console.warn('[V51/P4] checkDeletionStatus threw:', e); }
               return { scheduled: false };
             }}
           />; break;
@@ -6710,28 +6895,33 @@
             onSignUp={() => go('signup')}
             onBack={goBack}
           />; break;
-        // V50 Fix #C1: verify-email screen — post-signup waiting room. Polls
-        // emailVerified status; auto-routes to home (which kicks into TW for
-        // new users via existing hydration flag) when verified.
+        // V51 / Pattern 3B: verify-email screen — post-requestSignup waiting
+        // room. There is NO Firebase user at this point. The deep-link handler
+        // at boot (?token=…) completes signup; the resulting onAuthChange tick
+        // and hydration watcher take the user through Trial Welcome.
+        // This screen owns only: Resend (Worker /resendSignup) and Wrong-email
+        // (Worker /cancelSignup → back to signup form).
         case 'verify_email':
           view = <VerifyEmailScreen
-            // V50/C1 polish: fallback to auth.currentUser.email when context
-            // is null (case where hydration watcher routes here directly,
-            // bypassing the SignUp onSubmitted callback that sets context).
+            // V51: email from verifyEmailContext is the canonical source
+            // (set by SignUpScreen's onSubmitted). currentUser.email fallback
+            // would only fire if the user reloads this screen — context is
+            // React state, not persisted — at which point email is unknown
+            // and Resend/Cancel both show their empty-state messaging.
             email={
               (verifyEmailContext && verifyEmailContext.email) ||
               (groundedApi && groundedApi.groundedAuth && groundedApi.groundedAuth.currentUser && groundedApi.groundedAuth.currentUser.email) ||
               ''
             }
             groundedAuth={groundedApi && groundedApi.groundedAuth}
-            onChangeEmail={() => go('change_email')}
-            onContinueWhenVerified={() => {
+            onChangeEmail={() => {
+              // V51: route back to signup form (NOT 'change_email' — that's the
+              // Account Settings flow for signed-in users). cancelSignup is
+              // fired inside VerifyEmailScreen.handleChangeEmail before this.
               setVerifyEmailContext(null);
-              // Reuse the V49.1 Fix #3 TW flag so existing hydration watcher
-              // routes the now-verified user through Trial Welcome → Mirror.
-              try { localStorage.setItem('grounded_show_trial_welcome', '1'); } catch (e) {}
-              setScreen('home');
-              setAwaitingHydration(true);
+              // Clear the post-signup TW flag too — they're starting over.
+              try { localStorage.removeItem('grounded_show_trial_welcome'); } catch (e) {}
+              go('signup');
             }}
           />; break;
         // V50 Fix #A1: post-delete confirmation full-screen. After successful
@@ -7667,7 +7857,7 @@
                 <button
                   onClick={() => {
                     const baseData = {
-                      user: { email: 'parn@grounded.app' },
+                      user: { email: 'parn@mindoday.com' },
                       fiveValues: ['Freedom','Creativity','Growth','Impact','Honesty'],
                       topValues:  ['Freedom','Creativity','Growth'],
                       comfortable:   'At home with loved ones, slow handcraft, time alone, drawing, resting',

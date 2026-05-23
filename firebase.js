@@ -63,6 +63,7 @@ import {
   getAuth,
   onAuthStateChanged,
   signInWithEmailAndPassword,
+  signInWithCustomToken,
   createUserWithEmailAndPassword,
   signInWithPopup,
   signOut as fbSignOut,
@@ -598,6 +599,158 @@ const groundedAuth = {
     return () => authListeners.delete(cb);
   },
 
+  // ── V51 / Pattern 3B — Worker-mediated deferred signup ───────────────────
+  //
+  //  The old createUserWithEmailAndPassword flow created a Firebase Auth user
+  //  the moment the user clicked Create Account, before they verified their
+  //  email. That left orphaned/typo'd emails permanently "taken" in Firebase
+  //  Auth and let bots pollute the user list.
+  //
+  //  New flow (no Firebase user until email is verified):
+  //
+  //    1. SignUpScreen.handleSubmit → groundedAuth.requestSignup(email, pwd, name)
+  //       → POST {WORKER_URL}/requestSignup. Worker stores a pending-signup
+  //       row keyed by email + emails the user a verification link with a
+  //       short-lived token embedded in the URL.
+  //
+  //    2. User clicks link → lands on the PWA at ?token=… → App's boot-time
+  //       URL-param handler calls groundedAuth.completeSignup(token).
+  //       → POST {WORKER_URL}/completeSignup. Worker uses Admin SDK to
+  //       admin.auth().createUser({email, password, displayName,
+  //       emailVerified: true}) and mints a Firebase custom auth token.
+  //       FE then calls signInWithCustomToken — the existing onAuthChange
+  //       listener catches it and hydration routes through Trial Welcome.
+  //
+  //    3. Resend / Cancel from VerifyEmailScreen → groundedAuth.resendSignupEmail
+  //       / groundedAuth.cancelSignup — both pass {email} (FE never holds the
+  //       token; only the email knows it).
+  //
+  //  Worker contract (lock'd with Backend room May 22, 2026):
+  //    POST /requestSignup    {email, password, displayName?}  → {ok}
+  //                                                           failures:
+  //                                                             email-already-exists
+  //                                                             weak-password
+  //                                                             invalid-email
+  //                                                             send-failed
+  //    POST /completeSignup   {token}                          → {ok, customToken}
+  //                                                           failures:
+  //                                                             token-expired
+  //                                                             token-used
+  //                                                             token-invalid
+  //    POST /resendSignup     {email}                          → {ok}
+  //    POST /cancelSignup     {email}                          → {ok}
+
+  async requestSignup(email, password, displayName) {
+    if (!workerConfigured()) return { ok: false, code: "worker-not-configured" };
+    try {
+      const res = await fetch(`${WORKER_URL}/requestSignup`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: email,
+          password: password,
+          displayName: displayName || "",
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        return { ok: false, code: data.code || "http-error", error: data.error };
+      }
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, code: "fetch-failed", error: e.message };
+    }
+  },
+
+  async completeSignup(token) {
+    if (!workerConfigured()) return { ok: false, code: "worker-not-configured" };
+    if (!token || typeof token !== "string") {
+      return { ok: false, code: "invalid-token" };
+    }
+    try {
+      const res = await fetch(`${WORKER_URL}/completeSignup`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        return { ok: false, code: data.code || "http-error", error: data.error };
+      }
+      // V51 / Pattern 3B — Worker fallback path. The Firebase Auth user has
+      // been created (admin.auth().createUser succeeded), but the custom
+      // token mint failed. Worker returns ok:true so FE doesn't treat this
+      // as account-creation failure — instead surfaces the email so the
+      // deep-link handler can prefill the signin screen and let the user
+      // enter their password manually. We do NOT attempt signInWithCustomToken
+      // in this branch (no token to sign with).
+      if (data.needsManualSignIn === true || !data.customToken) {
+        return {
+          ok: true,
+          needsManualSignIn: true,
+          email: data.email || null,
+        };
+      }
+      // Happy path: signInWithCustomToken fires onAuthStateChanged; the
+      // existing listener chain (firebase.js §7 + V51 HTML A3 + hydration
+      // watcher) takes it from here. Worker is responsible for having set
+      // emailVerified: true on the Auth user record via Admin SDK, so
+      // user.emailVerified is true on the first onAuthChange tick —
+      // Trial Welcome routing works unchanged.
+      const cred = await signInWithCustomToken(auth, data.customToken);
+      return { ok: true, user: cred.user };
+    } catch (e) {
+      return { ok: false, code: e.code || "sign-in-failed", error: e.message };
+    }
+  },
+
+  async resendSignupEmail(email) {
+    if (!workerConfigured()) return { ok: false, code: "worker-not-configured" };
+    if (!email || typeof email !== "string") {
+      return { ok: false, code: "invalid-email" };
+    }
+    try {
+      const res = await fetch(`${WORKER_URL}/resendSignup`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        return { ok: false, code: data.code || "http-error", error: data.error };
+      }
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, code: "fetch-failed", error: e.message };
+    }
+  },
+
+  async cancelSignup(email) {
+    if (!workerConfigured()) return { ok: false, code: "worker-not-configured" };
+    if (!email || typeof email !== "string") {
+      return { ok: false, code: "invalid-email" };
+    }
+    try {
+      const res = await fetch(`${WORKER_URL}/cancelSignup`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        return { ok: false, code: data.code || "http-error", error: data.error };
+      }
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, code: "fetch-failed", error: e.message };
+    }
+  },
+
+  /**
+   * @deprecated V51/Pattern 3B — no longer called by SignUpScreen.
+   *   Use requestSignup + completeSignup instead. Kept for backwards compat
+   *   only (no in-tree callers as of V51). Will be removed in a future cleanup.
+   */
   async signUpWithEmail(email, password, displayName) {
     try {
       const cred = await createUserWithEmailAndPassword(auth, email, password);
