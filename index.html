@@ -806,6 +806,23 @@
     };
 
     // ============================================================
+    // V55 / P0 trial-trap root-cause fix (May 25, 2026).
+    //
+    // Subscription-status normalizer — mirrors firebase.js helper. Worker
+    // (worker/src/index.js L1491, L1529) writes British 'cancelled' to
+    // Firestore while Stripe API + every prior FE check used American
+    // 'canceled'. Both collapse to 'canceled' here so downstream
+    // status === 'canceled' comparisons fire correctly. See:
+    //   BUG_TRIAL_TRAP_INVESTIGATION.md
+    // ============================================================
+    function normalizeSubStatus(raw) {
+      if (typeof raw !== 'string') return null;
+      const s = raw.trim().toLowerCase();
+      if (s === 'canceled' || s === 'cancelled') return 'canceled';
+      return s;
+    }
+
+    // ============================================================
     // 1. WELCOME
     // ============================================================
     // V15/B2 + C1: map raw Firebase auth error codes → warm, non-technical copy.
@@ -1876,7 +1893,17 @@
     // ============================================================
     // V25/Phase2: HomeScreen accepts trialDaysLeft + onTrialBannerTap to render
     // the Day 5-6 trial banner conditionally above the greeting block.
-    const HomeScreen = ({ data, onReflect, onLaunchpad, onFreeWrite, onGroundMe, onNav, trialDaysLeft, onTrialBannerTap }) => {
+    //
+    // V54 (Parn 24 May 2026, end of Cowork 5): added subState + onManageSubscription
+    // for a NEW informational banner that shows the trial end DATE (not just
+    // days-left urgency). The two banners are intentional and coexist —
+    //   • TrialBanner (full-bleed, urgency, days 1-5, PRE-EXISTING) — "X days
+    //     left — pick your path"; sage-solid at day 1
+    //   • TrialEndInfoBanner (card inside scroll, transparency, all 7 days,
+    //     NEW V54 Delta 1) — "Your trial ends [date]. Manage subscription"
+    // Per Parn Q2-A: NOT merging them; the urgency + the transparency are
+    // distinct communicative jobs.
+    const HomeScreen = ({ data, onReflect, onLaunchpad, onFreeWrite, onGroundMe, onNav, trialDaysLeft, onTrialBannerTap, subState, onManageSubscription }) => {
       const greeting = useMemo(() => {
         const h = new Date().getHours();
         if (h < 12) return { text: 'Good morning', emoji: '☀️' };
@@ -1890,10 +1917,83 @@
       // chances to drive subscription urgency. TrialBanner internal styling
       // still escalates at daysLeft <= 1 (sage solid for last day).
       const showBanner = PHASE_2_TRIAL_UI_ENABLED && typeof trialDaysLeft === 'number' && trialDaysLeft > 0 && trialDaysLeft <= 5;
+
+      // V54 Delta 1 — informational trial-end-date banner.
+      //   • Read trial end date from subState. Accept Stripe + Firestore naming
+      //     variants (trialEnd / trial_end / trialEndsAt), same patterns the
+      //     AccountScreen V54 logic uses.
+      //   • Format via inline _toDate + _formatFullDateLocal helpers — parallel
+      //     to AccountScreen's local helpers (kept local instead of hoisting to
+      //     avoid touching V53's tested implementation).
+      //   • Gated on PHASE_2_TRIAL_UI_ENABLED so dev/test envs that hide trial UI
+      //     also hide this banner.
+      //   • Renders during the full trial; coexists with TrialBanner at days 1-5.
+      // V55 P0: normalize for consistency with the rest of the file. Trial banner
+      // doesn't currently care about cancelled states, but normalizing now means
+      // any future Worker spelling variants land cleanly.
+      const _subStatusH    = normalizeSubStatus(subState && subState.status);
+      const _isSubTrialH   = _subStatusH === 'trial' || _subStatusH === 'trialing';
+      const _trialEndRawH  = subState && (subState.trialEnd || subState.trial_end || subState.trialEndsAt);
+      const _toDateH = (v) => {
+        if (!v) return null;
+        if (v instanceof Date) return isNaN(v) ? null : v;
+        if (typeof v === 'object') {
+          const secs = v.seconds || v._seconds;
+          if (typeof secs === 'number') return new Date(secs * 1000);
+          if (typeof v.toDate === 'function') {
+            try { const d = v.toDate(); return isNaN(d) ? null : d; } catch (e) { return null; }
+          }
+          return null;
+        }
+        const d = new Date(v);
+        return isNaN(d) ? null : d;
+      };
+      const _isThaiH = (typeof lang !== 'undefined' && lang === 'th');
+      const _TH_MONTHS_H = ['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน','กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม'];
+      const _EN_MONTHS_H = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+      const _formatFullDateLocal = (v) => {
+        const d = _toDateH(v);
+        if (!d) return '—';
+        if (_isThaiH) return `${d.getDate()} ${_TH_MONTHS_H[d.getMonth()]} ${d.getFullYear() + 543}`;
+        return `${d.getDate()} ${_EN_MONTHS_H[d.getMonth()]} ${d.getFullYear()}`;
+      };
+      const showTrialInfoBanner = PHASE_2_TRIAL_UI_ENABLED && _isSubTrialH && !!_toDateH(_trialEndRawH);
+      const handleManageTap = () => {
+        if (typeof onManageSubscription === 'function') onManageSubscription();
+      };
+
       return (
         <div className="phone-frame fade-in">
           {showBanner && <TrialBanner daysLeft={trialDaysLeft} onAction={onTrialBannerTap} />}
           <div className="flex-1 overflow-y-auto no-scrollbar px-6 pt-8">
+            {/* V54 Delta 1 — Trial end date info banner.
+                Calm cream-with-gold-edge card. NOT urgency styling (TrialBanner
+                handles that at days 1-5). Inline "Manage subscription" link
+                → onManageSubscription → App-level handler → Stripe Portal. */}
+            {showTrialInfoBanner && (
+              <div
+                role="status"
+                className="rounded-lg p-3 mb-4 text-sm"
+                style={{
+                  backgroundColor: '#FFF8F0',
+                  border: '1px solid #C9A86C',
+                  color: '#3D5E4C',
+                }}
+              >
+                <p className="leading-snug">
+                  Your trial ends <strong>{_formatFullDateLocal(_trialEndRawH)}</strong>.
+                  {' '}
+                  <button
+                    type="button"
+                    onClick={handleManageTap}
+                    className="underline font-semibold"
+                    style={{ color: '#3D5E4C' }}
+                  >
+                    Manage subscription
+                  </button>
+                </p>
+              </div>
+            )}
             <h1 className="font-serif text-[30px] text-g-charcoal">
               {greeting.text} <span>{greeting.emoji}</span>
             </h1>
@@ -3591,11 +3691,15 @@
       </ul>
     );
 
-    const SubscriptionSettingsScreen = ({ subState, sync, onTierPick, onBack, onHome, onDowngradeRequest }) => {
+    const SubscriptionSettingsScreen = ({ subState, sync, onTierPick, onBack, onHome, onDowngradeRequest, onSignOut }) => {
       const [notice, setNotice] = useState(null);
       const flashNotice = (msg) => { setNotice(msg); setTimeout(() => setNotice(null), 3000); };
 
-      const status = subState && subState.status;
+      // V55 P0: normalize subscription status so British 'cancelled' (Worker
+      // wire format) matches American 'canceled' (Stripe API canonical). Before
+      // this, 'cancelled' fell through all positive checks and triggered the
+      // unsafe TRIAL fallback render → infinite trap.
+      const status = normalizeSubStatus(subState && subState.status);
       const trialDaysLeft = (sync && typeof sync.getTrialDaysLeft === 'function')
         ? sync.getTrialDaysLeft() : null;
       const graceDaysLeft = (sync && typeof sync.getDaysLeftInGrace === 'function')
@@ -3607,8 +3711,14 @@
       // fix card via Stripe Portal). LAPSED is reserved for fully-lapsed
       // states where there's no active subscription to manage.
       // Grace countdown surfaces inline in ACTIVE mode (warning line).
+      // V55 P0: positive checks only. Any status that ISN'T trial/active/grace
+      // routes to LAPSED render via the else branch — no more "Your trial is
+      // active" rendered for unknown/cancelled statuses (the bug surface).
       const isTrial   = status === 'trial';
       const isActive  = status === 'active' || status === 'grace';
+      // Kept for symmetry / clarity, but render flow no longer relies on this
+      // — the LAPSED branch is now the safe default for anything non-trial /
+      // non-active (see render switch below).
       const isLapsed  = status === 'lapsed' || status === 'canceled' || status === 'expired';
       const isInGrace = status === 'grace';
 
@@ -3818,35 +3928,41 @@
           </>
         );
       }
-      // ── LAPSED mode (status='lapsed'/'canceled'/'expired') ────────
-      // V49: grace removed from this bucket — grace now ACTIVE (user can
-      // still manage payment). LAPSED is reserved for fully-lapsed states
-      // where there's no subscription to manage, only resubscribe.
-      else if (isLapsed) {
-        body = (
-          <>
-            <h2 className="font-serif font-semibold text-[26px] text-g-deep text-center mt-2 leading-snug">
-              Your subscription<br/>paused
-            </h2>
-            <p className="text-center text-g-gray text-sm italic mt-5 px-2">
-              Your data stays preserved. Resubscribe anytime to pick up where you left off.
-            </p>
-            <SubscriptionCompareTable />
-            <div className="mt-8 flex justify-center pb-6">
-              <PillButton onClick={onTierPick}>Resubscribe</PillButton>
-            </div>
-          </>
-        );
-      }
-      // ── TRIAL mode (default + pre-M2 fallback) ────────────────────
-      else {
+      // V55 P0 architectural fix — Render flow restructured:
+      //
+      //   if (isActive)  → ACTIVE body  (subscription healthy)
+      //   else if (isTrial) → TRIAL body  (POSITIVE check — only fires when
+      //                       status === 'trial', not as a fallback)
+      //   else → LAPSED body (safe default for cancelled / lapsed / expired /
+      //          ANY unknown status — never the misleading "Your trial is
+      //          active" copy)
+      //
+      // The OLD else-branch rendered TRIAL content as the "pre-M2 fallback".
+      // That fallback was the trap surface: cancelled-status users fell into
+      // it (because Worker's British 'cancelled' didn't match isLapsed's
+      // American 'canceled'), saw "Your trial is active" copy, and got
+      // re-redirected here by the gate every time they tried to leave.
+      // Flipping TRIAL to a positive check and making LAPSED the safe default
+      // closes the trap permanently — every status the FE doesn't recognize
+      // routes to the most truthful state (paused subscription / resubscribe).
+      // ── TRIAL mode (positive check, status === 'trial' only) ──────
+      else if (isTrial) {
         const daysText = (typeof trialDaysLeft === 'number')
           ? `${trialDaysLeft} day${trialDaysLeft === 1 ? '' : 's'} of MindoDay left`
           : 'Your trial is active.';
+        /* V54 — Dropped redundant "Your trial" h2 (the body text already
+           communicates trial state via daysText / "Your trial is active.").
+           When trialDaysLeft is unknown the daysText itself reads as a
+           heading; when it's a count we promote daysText to the heading
+           position so the screen still has a strong h2 anchor. */
         body = (
           <>
-            <h2 className="font-serif font-semibold text-[28px] text-g-deep text-center mt-2">Your trial</h2>
-            <p className="text-center text-g-charcoal text-[15px] mt-5">{daysText}</p>
+            <h2 className="font-serif font-semibold text-[28px] text-g-deep text-center mt-2 leading-snug">
+              {(typeof trialDaysLeft === 'number') ? 'Your trial is active.' : daysText}
+            </h2>
+            {typeof trialDaysLeft === 'number' && (
+              <p className="text-center text-g-charcoal text-[15px] mt-5">{daysText}</p>
+            )}
             <p className="text-center text-g-gray text-sm italic mt-3 px-4">
               After your trial, pick your tier to continue.
             </p>
@@ -3872,6 +3988,44 @@
             <SubscriptionCompareTable />
             <div className="mt-8 flex justify-center pb-6">
               <PillButton onClick={onTierPick}>Pick your tier</PillButton>
+            </div>
+          </>
+        );
+      }
+      // ── LAPSED mode — SAFE DEFAULT (status ∈ {lapsed, canceled, expired, anything-else}) ──
+      // V49: grace removed from this bucket — grace now ACTIVE (user can
+      // still manage payment). LAPSED is reserved for fully-lapsed states
+      // where there's no subscription to manage, only resubscribe.
+      //
+      // V55 P0: this is now the SAFE DEFAULT — anything that's not isActive
+      // and not isTrial routes here. Includes the previously trap-inducing
+      // 'cancelled' (British) status, plus any future unknown status the
+      // Worker might emit. Adds Sign Out option so a user without a working
+      // subscription can ALWAYS escape (right-to-easy-cancellation: Thai
+      // PDPA + EU consumer law). Without Sign Out, blocked users were
+      // imprisoned in the trap until they cleared site data or subscribed.
+      else {
+        body = (
+          <>
+            <h2 className="font-serif font-semibold text-[26px] text-g-deep text-center mt-2 leading-snug">
+              Your subscription<br/>paused
+            </h2>
+            <p className="text-center text-g-gray text-sm italic mt-5 px-2">
+              Your data stays preserved. Resubscribe anytime to pick up where you left off.
+            </p>
+            <SubscriptionCompareTable />
+            <div className="mt-8 flex flex-col items-center gap-3 pb-6">
+              <PillButton onClick={onTierPick}>Resubscribe</PillButton>
+              {/* V55 P0 — escape mechanism for gated users. */}
+              {typeof onSignOut === 'function' && (
+                <button
+                  type="button"
+                  onClick={onSignOut}
+                  className="text-g-gray text-sm underline mt-1"
+                >
+                  Sign out instead
+                </button>
+              )}
             </div>
           </>
         );
@@ -4148,7 +4302,11 @@
     // navigation (Change email/mobile/password) no longer wipes typed values.
     // Profile pic sheet + delete modal stay local — transient UI, no nav survival.
     // V50 Fix #C2: groundedAuth prop added for emailVerified status reads.
-    const AccountScreen = ({ draft, onUpdateDraft, onCommit, onExit, onManagePlan, onChangeEmail, onChangeMobile, onChangePassword, onDeleteAccount, groundedAuth }) => {
+    /* V54 — AccountScreen now also reads subState (trial_end / current_period_end
+       + member-since startedAt) and sync (openCustomerPortal helper) and lang
+       ('th' | 'en' for date formatting). All new props are optional — screen
+       degrades gracefully when pre-Backend / pre-trial. */
+    const AccountScreen = ({ draft, onUpdateDraft, onCommit, onExit, onManagePlan, onChangeEmail, onChangeMobile, onChangePassword, onDeleteAccount, groundedAuth, subState, sync, lang }) => {
       // Defensive read: draft should never be null while this screen is mounted
       // (enterAccount initializes it before navigating here), but if it is,
       // fall back to empty strings so the screen doesn't crash.
@@ -4175,6 +4333,99 @@
         const d = new Date(iso);
         if (isNaN(d)) return iso;
         return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+      };
+
+      /* V54 — Date helpers for Your Journey card.
+         formatFullDate: "24 May 2026" (en) | "24 พฤษภาคม 2569" (th, +543 Buddhist year).
+         formatMonthYear: "May 2026" (en) | "พฤษภาคม 2569" (th). Fallback to "—" on bad/empty input.
+         Accepts ISO string, ms epoch, Date, or Firestore-style {seconds}/{_seconds} timestamps. */
+      const _isThai = lang === 'th';
+      const _TH_MONTHS = ['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน','กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม'];
+      const _EN_MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+      const _toDate = (v) => {
+        if (!v) return null;
+        if (v instanceof Date) return isNaN(v) ? null : v;
+        if (typeof v === 'object') {
+          // Firestore timestamp shapes: {seconds, nanoseconds} or {_seconds, _nanoseconds}
+          const secs = v.seconds || v._seconds;
+          if (typeof secs === 'number') return new Date(secs * 1000);
+          if (typeof v.toDate === 'function') {
+            try { const d = v.toDate(); return isNaN(d) ? null : d; } catch (e) { return null; }
+          }
+          return null;
+        }
+        const d = new Date(v);
+        return isNaN(d) ? null : d;
+      };
+      const formatFullDate = (v) => {
+        const d = _toDate(v);
+        if (!d) return '—';
+        if (_isThai) return `${d.getDate()} ${_TH_MONTHS[d.getMonth()]} ${d.getFullYear() + 543}`;
+        return `${d.getDate()} ${_EN_MONTHS[d.getMonth()]} ${d.getFullYear()}`;
+      };
+
+      /* V54 — Read trial-end / next-billing from subState. Backend may surface
+         these under several keys (Stripe naming vs Firestore naming): trialEnd,
+         trial_end, trialEndsAt, currentPeriodEnd, current_period_end. We accept
+         all and pick the first defined value. status='trial' → label "Trial ends",
+         status='active'/'grace' → label "Next billing". Pre-Backend / pre-trial
+         (subState=null or no date present) → row hidden. */
+      // V55 P0: normalize status so 'cancelled' (British, Worker wire format)
+      // matches 'canceled' downstream. See BUG_TRIAL_TRAP_INVESTIGATION.md.
+      const _subStatus = normalizeSubStatus(subState && subState.status);
+      const _isSubTrial  = _subStatus === 'trial' || _subStatus === 'trialing';
+      const _isSubActive = _subStatus === 'active' || _subStatus === 'grace';
+      const _trialEndRaw = subState && (subState.trialEnd || subState.trial_end || subState.trialEndsAt);
+      const _periodEndRaw = subState && (subState.currentPeriodEnd || subState.current_period_end || subState.nextBilling);
+      const _journeyDateLabel = _isSubTrial ? 'Trial ends' : (_isSubActive ? 'Next billing' : null);
+      const _journeyDateValue = _isSubTrial ? _trialEndRaw : (_isSubActive ? _periodEndRaw : null);
+      const _showJourneyDate = !!(_journeyDateLabel && _journeyDateValue);
+
+      /* V54 — Member-since: prefer subState.startedAt/createdAt (most authoritative),
+         fall back to draft.createdAt / draft.signupAt (set during signup). Renders
+         as full date "24 May 2026" instead of just "May 2026". */
+      const _memberSinceRaw = (subState && (subState.startedAt || subState.createdAt))
+                           || (d && (d.createdAt || d.signupAt))
+                           || null;
+
+      /* V54 — Manage Subscription button. Same redirect flow as
+         SubscriptionSettingsScreen.handlePortal (V49/M2): asks groundedSync to
+         create a Customer Portal session, then window.location.href = result.url.
+         Disabled state during pending prevents double-tap. Falls back to a
+         toast notice if helper is missing (pre-Backend / dev). */
+      const [portalPending, setPortalPending] = useState(false);
+      const [portalNotice, setPortalNotice] = useState(null);
+      const flashPortalNotice = (msg) => {
+        setPortalNotice(msg);
+        setTimeout(() => setPortalNotice(null), 3000);
+      };
+      const handleManageSubscription = async () => {
+        if (portalPending) return;
+        if (!sync || typeof sync.openCustomerPortal !== 'function') {
+          flashPortalNotice('Customer portal ships next update');
+          return;
+        }
+        setPortalPending(true);
+        try {
+          const returnUrl = window.location.href;
+          const result = await sync.openCustomerPortal({ returnUrl });
+          if (result && result.url) {
+            window.location.href = result.url;
+            /* leave pending=true through the redirect */
+          } else {
+            console.warn('[V54] openCustomerPortal returned no url:', result);
+            flashPortalNotice('Could not open portal — please try again.');
+            setPortalPending(false);
+          }
+        } catch (e) {
+          console.warn('[V54] openCustomerPortal threw:', e);
+          if (e && (e.code === 'no-subscription' || e.message === 'no-subscription')) {
+            flashPortalNotice("You don't have an active subscription to manage.");
+          } else {
+            flashPortalNotice('Could not open subscription portal — please try again.');
+          }
+          setPortalPending(false);
+        }
       };
 
       const handleDone = () => {
@@ -4313,21 +4564,70 @@
               </p>
             </div>
 
-            {/* Your Journey card */}
+            {/* Your Journey card
+                V54 — Member-since now shows full date ("24 May 2026" / Thai BE)
+                instead of just the month. Trial-end / next-billing row added
+                under Current plan when subState provides it. Manage subscription
+                button (Stripe Portal redirect) added below the card — required
+                by Thai PDPA + EU consumer law (right to easy cancellation).
+                The existing "Manage →" link in the header is preserved for
+                navigation into the in-app subscription detail screen. */}
             <div className="mt-5 mb-2 flex items-center justify-between">
               <p className="text-g-gray text-[13px]">Your Journey</p>
               <button onClick={onManagePlan} className="text-g-deep text-sm font-semibold">Manage →</button>
             </div>
-            <div className="card-outline px-4 py-3 mb-5">
+            <div className="card-outline px-4 py-3 mb-3">
               <div className="flex items-center justify-between py-1">
                 <span className="font-bold text-g-charcoal text-[14px]">Member since</span>
-                <span className="text-g-charcoal text-[14px]">May 2026</span>
+                {/* V54 — full date (was just "May 2026"). Falls back to "May 2026"
+                    when no startedAt/createdAt is available, preserving prior copy. */}
+                <span className="text-g-charcoal text-[14px]">
+                  {_memberSinceRaw ? formatFullDate(_memberSinceRaw) : 'May 2026'}
+                </span>
               </div>
               <div className="flex items-center justify-between py-1">
                 <span className="font-bold text-g-charcoal text-[14px]">Current plan</span>
-                <span className="text-g-charcoal text-[14px]">Premium (trial)</span>
+                <span className="text-g-charcoal text-[14px]">
+                  {/* V54 — pull from subState when present, fall back to existing copy. */}
+                  {(() => {
+                    if (!subState) return 'Premium (trial)';
+                    const tierName = subState.tier === 'pro' ? 'Pro' : 'Premium';
+                    if (_isSubTrial) return `${tierName} (trial)`;
+                    // V55 P0: _subStatus is normalized at L4370 — 'cancelled' is now collapsed to 'canceled'.
+                    if (_subStatus === 'lapsed' || _subStatus === 'canceled' || _subStatus === 'expired') return `${tierName} (paused)`;
+                    return tierName;
+                  })()}
+                </span>
               </div>
+              {/* V54 — Trial ends / Next billing row. Hidden when subState
+                  doesn't provide a usable date (pre-Backend, pre-trial, or
+                  lapsed without a renewal date). */}
+              {_showJourneyDate && (
+                <div className="flex items-center justify-between py-1">
+                  <span className="font-bold text-g-charcoal text-[14px]">{_journeyDateLabel}</span>
+                  <span className="text-g-charcoal text-[14px]">{formatFullDate(_journeyDateValue)}</span>
+                </div>
+              )}
             </div>
+            {/* V54 — Manage subscription button. Direct redirect to Stripe
+                Customer Portal so user can cancel, change card, or view billing
+                without leaving the Account screen. Required by Thai PDPA +
+                EU consumer law (right to easy cancellation). Shown for users
+                with any subscription state; helper handles "no-subscription"
+                gracefully. */}
+            <button
+              onClick={handleManageSubscription}
+              disabled={portalPending}
+              className="card-outline w-full px-4 py-3 mb-5 flex items-center justify-between text-left transition-all active:scale-[0.99] disabled:opacity-60"
+            >
+              <span className="font-bold text-g-charcoal text-[14px]">
+                {portalPending ? 'Opening…' : 'Manage subscription'}
+              </span>
+              <span className="text-g-deep">→</span>
+            </button>
+            {portalNotice && (
+              <p className="text-center text-g-gray text-[12px] italic mb-4 -mt-2">{portalNotice}</p>
+            )}
 
             {/* Security card */}
             <p className="text-g-gray text-[13px] mb-2">Security</p>
@@ -5181,9 +5481,21 @@
           <p className="mt-3 text-g-charcoal text-[17px] leading-relaxed" style={{ maxWidth: '320px' }}>
             The next 7 days are yours, on us. <br/>Take five minutes a day to feel grounded.
           </p>
-          <p className="mt-3 text-[14px] italic leading-relaxed" style={{ color: '#888888', maxWidth: '300px' }}>
-            No card needed. We'll send a gentle<br/>
-            reminder before any charge.
+          {/* V54 — Copy honesty fix. Flow A2 = Stripe trial w/ card required,
+              so the previous "No card needed" line misled users. New copy
+              names the card requirement up front, names the no-charge window,
+              and explicitly cites cancel-anytime — matches Stripe Checkout
+              promise on day 8 of trial. Day-8 date computed from "now + 7d"
+              so it stays accurate regardless of when the user lands here
+              (returning lapsed users could see a stale baked-in date). */}
+          <p className="mt-3 text-[14px] italic leading-relaxed" style={{ color: '#888888', maxWidth: '320px' }}>
+            {(() => {
+              const day8 = new Date();
+              day8.setDate(day8.getDate() + 8);
+              const MONTHS_SHORT_LOCAL = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+              const day8Label = `${day8.getDate()} ${MONTHS_SHORT_LOCAL[day8.getMonth()]}`;
+              return `Add card to start your 7 days. Cancel anytime — no charge before ${day8Label}.`;
+            })()}
           </p>
 
           <button
@@ -6838,7 +7150,11 @@
       const _onAllowedRoute = (screen === 'tier_pick' || screen === 'subscription');
       const _gateBlocked = _blocked && !_onAllowedRoute;
 
-      const _subStatus = subState && subState.status;
+      // V55 P0: normalize at the gate so spelling variants don't leak through.
+      // _isTrialExpired remains a strict === 'trial' check — that branch is
+      // about routing Day-7 trial-expired users to forced tier_pick. The real
+      // benefit here is to future-proof any other consumers of _subStatus.
+      const _subStatus = normalizeSubStatus(subState && subState.status);
       const _isTrialExpired = _subStatus === 'trial';  // status='trial' + canAccessApp=false ⇒ expired
       const _gateRedirect = (() => {
         if (!_gateBlocked) return null;
@@ -7102,6 +7418,31 @@
                 : 0
             }
             onTrialBannerTap={() => go('tier_pick')}
+            /* V54 Delta 1 — Home info banner: read trial end date from subState,
+               provide an inline "Manage subscription" → Stripe Portal redirect.
+               Same shape as AccountScreen.handleManageSubscription (V53) but
+               scoped to this render — no toast UI on Home, just redirect or
+               silent fail (banner stays visible if redirect fails, user can
+               still navigate to Account screen for the full-featured button). */
+            subState={subState}
+            onManageSubscription={async () => {
+              const _sync = groundedApi && groundedApi.groundedSync;
+              if (!_sync || typeof _sync.openCustomerPortal !== 'function') {
+                console.warn('[V54] Home onManageSubscription: openCustomerPortal helper missing');
+                return;
+              }
+              try {
+                const returnUrl = window.location.href;
+                const result = await _sync.openCustomerPortal({ returnUrl });
+                if (result && result.url) {
+                  window.location.href = result.url;
+                } else {
+                  console.warn('[V54] Home openCustomerPortal returned no url:', result);
+                }
+              } catch (e) {
+                console.warn('[V54] Home openCustomerPortal threw:', e);
+              }
+            }}
           />; break;
         /* V25/Phase2 — new routes */
         case 'trial_welcome':
@@ -7253,6 +7594,10 @@
           // V49/Bug#4: Back + Done both hardcoded to 'settings'. Same destination,
           // robust against history loss (direct URL, refresh, PWA reload, Stripe
           // return). User always knows they'll land on Settings.
+          // V55 P0: onSignOut wired so a gated user (cancelled / lapsed) has a
+          // working escape — without it the gate redirects them back here on
+          // every Done/Back tap. After sign-out the auth listener fires with
+          // user=null, the gate releases, and the resolver lands them on welcome.
           view = <SubscriptionSettingsScreen
             subState={subState}
             sync={groundedApi && groundedApi.groundedSync}
@@ -7260,6 +7605,16 @@
             onBack={() => go('settings')}
             onHome={() => go('settings')}
             onDowngradeRequest={(payload) => setDowngradeModal(payload)}
+            onSignOut={async () => {
+              if (!groundedApi || !groundedApi.groundedAuth) return;
+              try {
+                await groundedApi.groundedAuth.signOut();
+                /* Auth listener takes over from here: user=null → resolveInitialScreen
+                   returns 'welcome' for anonymous, gate releases, resolver routes. */
+              } catch (e) {
+                console.warn('[V55] sign-out from SubscriptionSettings failed:', e);
+              }
+            }}
           />; break;
         case 'premium':
           // V38: legacy alias — old 'premium' route redirected to 'subscription'.
@@ -7267,6 +7622,7 @@
           // from older versions) land on the new route. setScreen avoids history
           // pollution. Wrapped in useEffect to avoid setState during render.
           // V49/Bug#4: Back hardcoded to Settings (same as 'subscription' case).
+          // V55 P0: same onSignOut escape as 'subscription' above.
           view = <SubscriptionSettingsScreen
             subState={subState}
             sync={groundedApi && groundedApi.groundedSync}
@@ -7274,6 +7630,14 @@
             onBack={() => go('settings')}
             onHome={() => go('settings')}
             onDowngradeRequest={(payload) => setDowngradeModal(payload)}
+            onSignOut={async () => {
+              if (!groundedApi || !groundedApi.groundedAuth) return;
+              try {
+                await groundedApi.groundedAuth.signOut();
+              } catch (e) {
+                console.warn('[V55] sign-out from SubscriptionSettings (premium alias) failed:', e);
+              }
+            }}
           />; break;
         case 'paywall':
           // V38: paywall route preserved as defensive fallback. Gate now redirects
@@ -7476,6 +7840,12 @@
             onChangePassword={() => go('change_password')}
             // V50 Fix #C2: pass groundedAuth for emailVerified status reads.
             groundedAuth={groundedApi && groundedApi.groundedAuth}
+            /* V54 — Pass subState + sync (for Manage subscription button +
+               trial-end/next-billing dates) and current language (for
+               Thai-vs-English date formatting in Your Journey card). */
+            subState={subState}
+            sync={groundedApi && groundedApi.groundedSync}
+            lang={(data && data.lang) || 'en'}
             // V50 Fix #A1: call Backend POST /requestAccountDeletion. On success,
             // sign out + clear local data + route to confirmation screen. The
             // 2-step confirmation modal lives inside AccountScreen; this handler

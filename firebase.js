@@ -266,6 +266,31 @@ function tsMillis(t) {
 }
 
 /**
+ * V55 / P0 trial-trap root-cause fix (May 25, 2026).
+ *
+ * Normalize subscription status strings at the read boundary. The Worker
+ * (worker/src/index.js L1491, L1529) writes the British spelling 'cancelled'
+ * to Firestore even though Stripe's API uses American 'canceled'. Pre-V55
+ * the FE only matched American, so every cancelled-status user fell through
+ * to the "unknown status" path → TRIAL fallback render → gate trap. Twenty-
+ * four versions of patches missed this because British and American differ
+ * by a single 'l' and look identical to a fast code review.
+ *
+ * This helper canonicalizes BOTH spellings (and any future casing/whitespace
+ * weirdness) to a single source of truth. Use it anywhere we compare
+ * subscription.status to a literal string. See full investigation at:
+ *   Version 19 - Pattern 3B Deferred Signup/BUG_TRIAL_TRAP_INVESTIGATION.md
+ */
+function normalizeSubStatus(raw) {
+  if (typeof raw !== "string") return null;
+  const s = raw.trim().toLowerCase();
+  // Cancelled-variants: Stripe writes 'canceled' (en-US), Worker rewrites it
+  // to 'cancelled' (en-GB) before Firestore write. Both collapse to 'canceled'.
+  if (s === "canceled" || s === "cancelled") return "canceled";
+  return s;
+}
+
+/**
  * The single source of truth for tier resolution. Frontend MUST go through
  * groundedSync.getEffectiveTier() — never read raw subscription fields.
  *
@@ -276,6 +301,10 @@ function tsMillis(t) {
  *   status 'trial'          → 'pro' if trial not expired (B1), else null
  *   status 'active'/'grace' → tier ('premium'|'pro') or null if missing
  *   anything else (lapsed)  → null
+ *
+ * V55: status is normalized via normalizeSubStatus() to collapse the British
+ * 'cancelled' / American 'canceled' duplicate. Without this, cancelled-status
+ * users got `null` here AND fell into the TRIAL fallback UI in the frontend.
  */
 function computeEffectiveTier(sub) {
   if (!sub) return "pro";                                          // A1
@@ -286,13 +315,16 @@ function computeEffectiveTier(sub) {
     return (ends !== null && ends > Date.now()) ? "premium" : null;
   }
 
-  if (sub.status === "trial") {
+  // V55: read via normalizer — both 'canceled' and 'cancelled' become 'canceled'
+  const status = normalizeSubStatus(sub.status);
+
+  if (status === "trial") {
     const ends = tsMillis(sub.trialEndDate);
     if (ends !== null && ends < Date.now()) return null;            // B1
     return "pro";
   }
 
-  if (sub.status === "active" || sub.status === "grace") {
+  if (status === "active" || status === "grace") {
     return (sub.tier === "premium" || sub.tier === "pro") ? sub.tier : null;
   }
 
