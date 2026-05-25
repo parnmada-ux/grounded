@@ -3721,6 +3721,16 @@
       // non-active (see render switch below).
       const isLapsed  = status === 'lapsed' || status === 'canceled' || status === 'expired';
       const isInGrace = status === 'grace';
+      // V56 (Parn 25 May 2026): the LAPSED render branch fires for anything
+      // that isn't an active subscription or an in-flight trial — i.e., the
+      // user is GATED. Both ← and "Done" in the header are non-functional in
+      // this state: the subscription gate immediately redirects the user back
+      // here on the next render (see App-router gate at ~L7140). Showing UI
+      // controls that don't work confuses users and erodes trust. So on the
+      // LAPSED branch we hide the entire header chrome and rely on the body's
+      // Resubscribe (primary) + Sign out instead (secondary) for navigation.
+      // Principle: never render a button that won't work.
+      const isLapsedRender = !isActive && !isTrial;
 
       // Founder pill data — surface in TRIAL mode (matches TierPick urgency).
       // V49: shape migrated from V28 ({count, capacity}) to M2-aligned
@@ -4033,9 +4043,19 @@
 
       return (
         <div className="phone-frame fade-in">
+          {/* V56 — Header chrome hidden on LAPSED branch. The ← and Done
+              buttons exist on ACTIVE/TRIAL paths (where they actually
+              navigate). On LAPSED the gate keeps redirecting the user back
+              here, so showing buttons that don't work is misleading. The
+              outer div with px-6 pt-6 pb-2 still renders to preserve the
+              ~32px top breathing room the body relies on for layout. */}
           <div className="px-6 pt-6 pb-2 flex items-center justify-between">
-            <BackArrow onClick={onBack} />
-            <button onClick={onHome} className="text-g-charcoal text-base">Done</button>
+            {!isLapsedRender && (
+              <>
+                <BackArrow onClick={onBack} />
+                <button onClick={onHome} className="text-g-charcoal text-base">Done</button>
+              </>
+            )}
           </div>
           <div className="flex-1 overflow-y-auto no-scrollbar px-6">
             {body}
