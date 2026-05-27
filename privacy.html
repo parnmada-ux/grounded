@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>MindoDay — นโยบายความเป็นส่วนตัว</title>
+<meta name="description" content="MindoDay เก็บ ใช้ และปกป้องข้อมูลของคุณอย่างไร บันทึกสะท้อนความคิดของคุณเป็นส่วนตัว ไม่ขาย ไม่นำไปเทรน AI" />
+<style>
+  :root {
+    --forest: #3D5E4C;
+    --sage: #5B8A72;
+    --cream: #F4F1EA;
+    --soft-cream: #FAF8F2;
+    --warm-tan: #C8B89F;
+    --charcoal: #2A2A2A;
+    --soft-gray: #6B6B6B;
+    --serif: 'Sarabun', Georgia, 'Times New Roman', serif;
+    --body: 'Sarabun', -apple-system, BlinkMacSystemFont, 'Segoe UI', Calibri, 'Helvetica Neue', sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--cream);
+    color: var(--charcoal);
+    font-family: var(--body);
+    font-size: 16px;
+    line-height: 1.8;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  .container {
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 48px 24px 80px;
+  }
+  .leaf {
+    color: var(--sage);
+    font-size: 24px;
+    text-align: center;
+    margin-bottom: 8px;
+  }
+  h1 {
+    font-family: var(--serif);
+    color: var(--forest);
+    font-size: 36px;
+    line-height: 1.3;
+    text-align: center;
+    margin: 0 0 8px;
+    font-weight: 500;
+  }
+  .effective {
+    text-align: center;
+    color: var(--soft-gray);
+    font-size: 14px;
+    margin-bottom: 32px;
+  }
+  .effective strong { color: var(--charcoal); }
+  .summary {
+    background: var(--soft-cream);
+    border-left: 4px solid var(--sage);
+    padding: 20px 24px;
+    margin: 32px 0 40px;
+    border-radius: 4px;
+  }
+  .summary strong { color: var(--forest); }
+  .summary p { margin: 0 0 8px; }
+  .summary p:last-child { margin: 0; }
+  h2 {
+    font-family: var(--serif);
+    color: var(--forest);
+    font-size: 24px;
+    margin: 48px 0 16px;
+    font-weight: 500;
+    border-bottom: 1px solid var(--warm-tan);
+    padding-bottom: 8px;
+  }
+  h3 {
+    font-family: var(--serif);
+    color: var(--sage);
+    font-size: 18px;
+    margin: 24px 0 12px;
+    font-weight: 500;
+  }
+  p { margin: 0 0 14px; }
+  ul, ol { margin: 0 0 18px; padding-left: 24px; }
+  li { margin-bottom: 8px; }
+  strong { color: var(--forest); font-weight: 600; }
+  a {
+    color: var(--sage);
+    text-decoration: underline;
+    text-decoration-color: var(--warm-tan);
+    text-underline-offset: 3px;
+  }
+  a:hover { color: var(--forest); text-decoration-color: var(--sage); }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 18px 0;
+    font-size: 14px;
+  }
+  th, td {
+    text-align: left;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--warm-tan);
+    vertical-align: top;
+  }
+  th {
+    background: var(--soft-cream);
+    color: var(--forest);
+    font-weight: 600;
+    font-family: var(--serif);
+  }
+  hr {
+    border: none;
+    border-top: 1px solid var(--warm-tan);
+    margin: 40px 0;
+  }
+  footer {
+    text-align: center;
+    margin-top: 64px;
+    padding-top: 24px;
+    border-top: 1px solid var(--warm-tan);
+    color: var(--soft-gray);
+    font-size: 14px;
+  }
+  footer a { color: var(--sage); }
+  @media (max-width: 600px) {
+    .container { padding: 32px 18px 64px; }
+    h1 { font-size: 28px; }
+    h2 { font-size: 20px; }
+    body { font-size: 15px; }
+  }
+</style>
+<link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+<div class="container">
+
+<div class="leaf">🌿</div>
+<h1>นโยบายความเป็นส่วนตัว</h1>
+<p class="effective"><strong>วันที่มีผลใช้บังคับ:</strong> 31 พฤษภาคม 2569 &nbsp;·&nbsp; <strong>ปรับปรุงล่าสุด:</strong> 31 พฤษภาคม 2569</p>
+
+<div class="summary">
+<p><strong>สรุปฉบับเข้าใจง่าย (อ่านส่วนนี้ก่อน):</strong></p>
+<p>MindoDay เก็บข้อมูลของคุณเท่าที่จำเป็นต่อการให้บริการ คือ อีเมล รหัสผ่าน (เก็บแบบเข้ารหัส) บันทึกสะท้อนความคิดที่คุณเขียน และสถานะการสมัครสมาชิก เราไม่ขายข้อมูลของคุณ ไม่มีโฆษณา และไม่แชร์บันทึกสะท้อนความคิดของคุณให้ใคร บันทึกของคุณ มีคุณคนเดียวที่เห็น</p>
+<p>หากคุณลบบัญชี ข้อมูลของคุณจะถูกลบถาวรหลังพ้นระยะผ่อนผัน 30 วัน หากมีคำถามเกี่ยวกับนโยบายนี้ ส่งอีเมลมาที่ <a href="mailto:hello@mindoday.com">hello@mindoday.com</a> สำหรับคำขอเรื่องข้อมูลส่วนบุคคลโดยเฉพาะ ส่งมาที่ <a href="mailto:privacy@mindoday.com">privacy@mindoday.com</a></p>
+</div>
+
+<h2>1. เราคือใคร</h2>
+<p>MindoDay ดำเนินการโดย <strong>นางสาวปานมาดา นิตินักปราชญ์</strong> (Parnmada Nitinakprach) ตั้งอยู่ที่กรุงเทพมหานคร ประเทศไทย ในเอกสารฉบับนี้ คำว่า "เรา" และ "MindoDay" หมายถึงผู้ดำเนินการ ส่วน "คุณ" หมายถึงผู้ใช้ MindoDay</p>
+<p><strong>วันก่อตั้ง MindoDay:</strong> 22 พฤษภาคม 2569</p>
+<p>หากมีคำถาม คำขอ หรือข้อกังวลเกี่ยวกับข้อมูลส่วนบุคคล สามารถติดต่อเจ้าหน้าที่คุ้มครองข้อมูลส่วนบุคคล (Data Protection Officer หรือ DPO) ของเราได้ที่ <a href="mailto:privacy@mindoday.com">privacy@mindoday.com</a> (จุดติดต่อที่กำหนดตามมาตรา 41 แห่ง พ.ร.บ.คุ้มครองข้อมูลส่วนบุคคล พ.ศ. 2562) สำหรับการติดต่อทั่วไป ส่งอีเมลมาที่ <a href="mailto:hello@mindoday.com">hello@mindoday.com</a></p>
+
+<h2>2. ข้อมูลที่เราเก็บ</h2>
+<p>เราเก็บข้อมูลเฉพาะที่จำเป็นต่อการให้บริการ เท่านั้น</p>
+
+<h3>2.1 ข้อมูลที่คุณให้กับเราโดยตรง</h3>
+<ul>
+<li><strong>อีเมล</strong> — ใช้ระบุตัวตนของบัญชีคุณ และส่งการสื่อสารที่จำเป็น (ยืนยันบัญชี ใบเสร็จการสมัครสมาชิก อีเมลกู้คืนบัญชี)</li>
+<li><strong>รหัสผ่าน</strong> — เราไม่เก็บรหัสผ่านในรูปแบบที่อ่านได้ ระบบยืนยันตัวตนใช้บริการของ Google ชื่อ Firebase Authentication ซึ่งเก็บแค่ค่าที่ผ่านการเข้ารหัสทางเดียว (hash) — เป็นมาตรฐานเดียวกับที่ธนาคารและแอปใหญ่ๆ ใช้ แม้แต่ทีม MindoDay เองก็เห็นรหัสจริงของคุณไม่ได้</li>
+<li><strong>บันทึกสะท้อนความคิดประจำวัน บันทึก journal และข้อความใดๆ ที่คุณเขียนใน MindoDay</strong> — จัดเก็บอย่างเป็นส่วนตัว มีคุณคนเดียวที่เห็น</li>
+<li><strong>การตั้งค่าโปรไฟล์</strong> — รวมถึงการตั้งค่าใดๆ ที่คุณปรับเปลี่ยนภายในแอป</li>
+</ul>
+
+<h3>2.2 ข้อมูลที่เก็บอัตโนมัติเมื่อคุณใช้ MindoDay</h3>
+<ul>
+<li><strong>สถานะการสมัครสมาชิก</strong> — แพ็กเกจปัจจุบันของคุณ (ฟรี / Premium / Pro) วันเริ่มต้นทดลองใช้ วันต่ออายุ</li>
+<li><strong>ข้อมูลทางเทคนิคพื้นฐาน</strong> — ประเภท browser ระบบปฏิบัติการ ภาษาที่ใช้ และภูมิภาคโดยประมาณ — ใช้เพื่อให้บริการทำงานได้และช่วยแก้ไขข้อผิดพลาด</li>
+<li><strong>เหตุการณ์การยืนยันตัวตน</strong> — เวลาเข้าสู่ระบบ เวลาออกจากระบบ และวันที่สร้างบัญชี</li>
+</ul>
+
+<h3>2.3 ข้อมูลที่เก็บโดย Stripe (ผู้ให้บริการรับชำระเงินของเรา)</h3>
+<p>หากคุณสมัครแพ็กเกจแบบเสียเงิน <strong>Stripe</strong> จะเป็นผู้ดำเนินการเรื่องการรับชำระเงิน Stripe จะรับข้อมูลบัตรของคุณโดยตรง — <strong>เราไม่เห็นและไม่เก็บหมายเลขบัตรเต็ม รหัส CVV หรือวันหมดอายุของบัตรเต็ม</strong> สิ่งที่เราได้รับจาก Stripe คือ:</p>
+<ul>
+<li>customer ID และ subscription ID ที่เชื่อมโยงบัญชี MindoDay ของคุณกับการสมัครสมาชิกที่ Stripe</li>
+<li>เลข 4 ตัวสุดท้ายของบัตร และแบรนด์บัตร (เช่น "Visa ลงท้าย 4242")</li>
+<li>ประเทศที่ออกบัตร</li>
+<li>สถานะการสมัครสมาชิก (active / past due / cancelled)</li>
+</ul>
+<p>นโยบายความเป็นส่วนตัวของ Stripe เองมีผลกับข้อมูลที่ Stripe เก็บ ดูได้ที่ <a href="https://stripe.com/privacy" target="_blank" rel="noopener">https://stripe.com/privacy</a></p>
+
+<h3>2.4 ข้อมูลที่เราไม่เก็บ</h3>
+<ul>
+<li>เราไม่ใช้ tracker (ตัวติดตาม) ของโฆษณาบุคคลที่สาม</li>
+<li>เราไม่ใช้ analytics จาก social media login</li>
+<li>เราไม่เก็บข้อมูลตำแหน่งที่แม่นยำ (GPS)</li>
+<li>เราไม่เก็บข้อมูลชีวมิติ (ลายนิ้วมือ ใบหน้า)</li>
+<li>เราไม่อ่านรายชื่อติดต่อ ไมโครโฟน กล้อง หรือ sensor อื่นๆ ในมือถือของคุณ</li>
+</ul>
+
+<h2>3. เราใช้ข้อมูลของคุณอย่างไร</h2>
+<p>เราใช้ข้อมูลของคุณเพื่อวัตถุประสงค์ต่อไปนี้ เท่านั้น:</p>
+<ol>
+<li><strong>ให้บริการแก่คุณ</strong> — แสดงบัญชี บันทึกสะท้อนความคิด และสถานะการสมัครสมาชิกของคุณ</li>
+<li><strong>ยืนยันตัวตนอย่างปลอดภัย</strong> — เพื่อให้แน่ใจว่ามีเฉพาะคุณคนเดียวที่เข้าสู่บัญชีได้</li>
+<li><strong>ดำเนินการเรื่องการรับชำระเงิน</strong> — ผ่าน Stripe</li>
+<li><strong>ส่งการสื่อสารที่จำเป็น</strong> — ยืนยันบัญชี รีเซ็ตรหัสผ่าน ใบเสร็จการสมัครสมาชิก และแจ้งเตือนเรื่องการเปลี่ยนแปลงนโยบายนี้หรือเงื่อนไขการให้บริการ</li>
+<li><strong>ปรับปรุงและแก้ไขข้อผิดพลาดของ MindoDay</strong> — แก้บั๊ก ป้องกันการใช้งานในทางที่ผิด และเพิ่มความเสถียร</li>
+<li><strong>ปฏิบัติตามภาระหน้าที่ทางกฎหมาย</strong> — เช่น เก็บบันทึกการรับชำระเงินตามที่ประมวลรัษฎากรของไทยกำหนด</li>
+</ol>
+<p>เรา<strong>ไม่</strong>นำบันทึกสะท้อนความคิด journal entries หรือเนื้อหาส่วนตัวใดๆ ของคุณ ไปใช้ฝึก AI ไปใช้ขายโฆษณา หรือแชร์ให้บุคคลที่สามเพื่อการตลาด</p>
+
+<h2>4. ข้อมูลของคุณถูกเก็บที่ไหน</h2>
+<p>MindoDay ใช้บริการจากผู้ให้บริการเหล่านี้ ซึ่งทั้งหมดผ่านมาตรฐานความปลอดภัยข้อมูลระดับสากล:</p>
+<table>
+<thead>
+<tr><th>ผู้ให้บริการ</th><th>เก็บอะไร</th><th>ที่ตั้ง</th></tr>
+</thead>
+<tbody>
+<tr><td><strong>Google Firebase</strong> (Authentication, Firestore, Hosting)</td><td>ข้อมูลรับรองบัญชี (เข้ารหัส) บันทึกสะท้อนความคิด สถานะการสมัครสมาชิก ข้อมูลแอป</td><td>Google Cloud (หลายภูมิภาค หลักๆ ในสหรัฐ)</td></tr>
+<tr><td><strong>Cloudflare Workers</strong></td><td>โค้ด backend API และการจัดการ webhook</td><td>Cloudflare edge network ทั่วโลก</td></tr>
+<tr><td><strong>Stripe</strong></td><td>ข้อมูลการรับชำระเงิน รอบบิลการสมัครสมาชิก</td><td>โครงสร้างพื้นฐานปลอดภัยของ Stripe (สหรัฐ/EU)</td></tr>
+<tr><td><strong>GitHub Pages</strong></td><td>ไฟล์ web app ของ MindoDay (HTML/CSS/JS) — ไม่เก็บข้อมูล user</td><td>CDN ของ GitHub</td></tr>
+<tr><td><strong>Resend</strong></td><td>การส่งอีเมลธุรกรรม (ยืนยันบัญชี ใบเสร็จ)</td><td>โครงสร้างพื้นฐานปลอดภัยของ Resend (สหรัฐ)</td></tr>
+</tbody>
+</table>
+<p>การใช้ MindoDay หมายความว่าคุณรับทราบว่าข้อมูลของคุณอาจถูกประมวลผลในประเทศนอกไทย รวมถึงสหรัฐอเมริกาและสหภาพยุโรป ซึ่งมีกฎหมายคุ้มครองข้อมูลส่วนบุคคลแตกต่างกัน เราพึ่งพาเงื่อนไขมาตรฐานด้านการคุ้มครองข้อมูลที่ผู้ให้บริการแต่ละรายเสนอ</p>
+
+<h2>5. เราเก็บข้อมูลของคุณนานเท่าไหร่</h2>
+<ul>
+<li><strong>ขณะบัญชีของคุณยังใช้งาน:</strong> เราเก็บข้อมูลตราบเท่าที่บัญชีของคุณยังมีอยู่</li>
+<li><strong>หากคุณลบบัญชี:</strong> MindoDay มี ระยะผ่อนผัน 30 วัน ข้อมูลของคุณจะถูกทำเครื่องหมายว่ารอลบทันที แต่การลบจริงจะเกิดขึ้นหลัง 30 วัน ในช่วงเวลานี้ คุณสามารถกู้คืนบัญชีได้ด้วยการเข้าสู่ระบบ หลัง 30 วัน ข้อมูลที่ระบุตัวตนได้ทั้งหมดจะถูกลบถาวร รวมถึงบันทึกสะท้อนความคิดและข้อมูลรับรองบัญชี</li>
+<li><strong>บันทึกการรับชำระเงิน:</strong> เก็บ <strong>7 ปี</strong> หลังธุรกรรมล่าสุด ตามที่กฎหมายบัญชีและภาษีของไทยกำหนด (ประมวลรัษฎากร มาตรา 87)</li>
+<li><strong>การสำรองข้อมูล (backup):</strong> backup ตามปกติอาจเก็บข้อมูลที่ถูกลบไปแล้วได้นานสุด <strong>เพิ่มอีก 35 วัน</strong> หลังการลบจริง ก่อนถูกเขียนทับในรอบ backup ปกติ</li>
+</ul>
+
+<h2>6. สิทธิของคุณ</h2>
+<p>คุณมีสิทธิ:</p>
+<ul>
+<li><strong>เข้าถึงข้อมูล</strong> — ขอสำเนาข้อมูลที่เรามีเกี่ยวกับคุณ</li>
+<li><strong>แก้ไขข้อมูล</strong> — ปรับปรุงข้อมูลที่ไม่ถูกต้อง (การตั้งค่าส่วนใหญ่แก้ได้จากในแอป)</li>
+<li><strong>ลบข้อมูล</strong> — ลบบัญชีและบันทึกสะท้อนความคิดถาวร (Settings → Account → Delete Account)</li>
+<li><strong>จำกัดหรือคัดค้าน</strong> — ขอให้เราจำกัดวิธีการใช้ข้อมูลของคุณ</li>
+<li><strong>ขอความเป็นพกพา (Portability)</strong> — ขอบันทึกสะท้อนความคิดของคุณในรูปแบบที่เครื่องอ่านได้ (JSON หรือ PDF)</li>
+<li><strong>ถอนความยินยอม</strong> — สำหรับสิ่งที่เราประมวลผลโดยอาศัยความยินยอมของคุณ (การถอนความยินยอมไม่กระทบการประมวลผลที่ชอบด้วยกฎหมายก่อนถอน)</li>
+<li><strong>ยื่นเรื่องร้องเรียน</strong> — ต่อ <strong>คณะกรรมการคุ้มครองข้อมูลส่วนบุคคลของประเทศไทย (PDPC)</strong> หรือหน่วยงานคุ้มครองข้อมูลในประเทศของคุณ</li>
+</ul>
+<p>เพื่อใช้สิทธิเหล่านี้ ส่งอีเมลมาที่ <a href="mailto:privacy@mindoday.com">privacy@mindoday.com</a> เราจะตอบกลับภายใน 30 วัน</p>
+<p>หากคุณอยู่ในสหภาพยุโรป (EU), EEA หรือสหราชอาณาจักร (UK) คุณมีสิทธิเพิ่มเติมตาม GDPR / UK GDPR ฐานทางกฎหมายในการประมวลผลของเราคือ (ก) การปฏิบัติตามสัญญา (ให้บริการที่คุณสมัคร) (ข) ผลประโยชน์โดยชอบด้วยกฎหมาย (การแก้บั๊ก ป้องกันการฉ้อโกง) และ (ค) ความยินยอม (เมื่อเกี่ยวข้อง)</p>
+
+<h2>7. เด็ก</h2>
+<p>MindoDay <strong>ไม่ได้ออกแบบสำหรับเด็กอายุต่ำกว่า 16 ปี</strong> เราไม่ตั้งใจเก็บข้อมูลจากใครก็ตามที่อายุต่ำกว่า 16 ปี หากคุณเชื่อว่ามีเด็กสร้างบัญชี กรุณาติดต่อ <a href="mailto:privacy@mindoday.com">privacy@mindoday.com</a> เราจะลบบัญชีนั้นให้</p>
+
+<h2>8. ความปลอดภัย</h2>
+<p>เราใช้มาตรการความปลอดภัยมาตรฐานอุตสาหกรรมเพื่อปกป้องข้อมูลของคุณ:</p>
+<ul>
+<li><strong>การเข้ารหัสระหว่างส่ง</strong> — การสื่อสารระหว่างอุปกรณ์ของคุณกับ MindoDay ทั้งหมดใช้ HTTPS (TLS 1.2 ขึ้นไป)</li>
+<li><strong>การเข้ารหัสขณะจัดเก็บ</strong> — ข้อมูลที่เก็บใน Firebase และ Stripe ถูกเข้ารหัสด้วยมาตรฐาน AES-256 (ระดับเดียวกับที่หน่วยงานความมั่นคงและธนาคารใช้)</li>
+<li><strong>การจัดเก็บรหัสผ่านอย่างปลอดภัย</strong> — รหัสผ่านของคุณถูกแปลงเป็นรหัสที่กลับไปเป็นข้อความจริงไม่ได้ก่อนเก็บลงระบบ (ใช้เทคนิคชื่อ bcrypt หรือ PBKDF2 ผ่านบริการ Firebase Authentication ของ Google) — เป็นมาตรฐานความปลอดภัยที่แอปและบริการออนไลน์ทั่วโลกใช้กัน</li>
+<li><strong>การควบคุมการเข้าถึง</strong> — มีเฉพาะบริการ backend ที่ได้รับอนุญาตเท่านั้นที่อ่านบันทึกสะท้อนความคิดของ user ได้ และไม่มี dashboard ภายในที่แสดงเนื้อหาบันทึกสะท้อนความคิดของแต่ละ user</li>
+</ul>
+<p>ไม่มีระบบใดที่ปลอดภัย 100% หากเกิดเหตุการณ์ข้อมูลรั่วไหลที่กระทบต่อคุณ เราจะแจ้งให้คุณทราบภายใน 72 ชั่วโมงหลังทราบเหตุ ตามที่ PDPA และ GDPR กำหนด หากจะรายงานข้อกังวลด้านความปลอดภัยหรือช่องโหว่ กรุณาส่งอีเมลมาที่ <a href="mailto:security@mindoday.com">security@mindoday.com</a></p>
+
+<h2>9. คุกกี้และเทคโนโลยีคล้ายกัน</h2>
+<p>MindoDay ใช้ cookies และ local storage จำนวนน้อยที่จำเป็นต่อการให้บริการ เท่านั้น:</p>
+<ul>
+<li><strong>Authentication tokens</strong> — เพื่อให้คุณยังคงเข้าสู่ระบบอยู่</li>
+<li><strong>สถานะแอปในเครื่อง</strong> — เพื่อจดจำการตั้งค่าและไม่ต้องดึงข้อมูลใหม่ทุกครั้งที่เปิดหน้า</li>
+</ul>
+<p>เราไม่ใช้ analytics cookies ของบุคคลที่สาม ไม่ใช้ advertising cookies และไม่ใช้ tracking pixels</p>
+
+<h2>10. ลิงก์ไปยังเว็บไซต์ภายนอก</h2>
+<p>MindoDay อาจมีลิงก์ไปยังแหล่งข้อมูลภายนอกเป็นครั้งคราว (เช่น สายด่วนสุขภาพจิต เนื้อหาพันธมิตร บทความช่วยเหลือ) เราไม่รับผิดชอบต่อนโยบายความเป็นส่วนตัวของเว็บไซต์ภายนอกเหล่านั้น กรุณาอ่านนโยบายของเว็บไซต์เหล่านั้นก่อนแชร์ข้อมูลกับเขา</p>
+
+<h2>11. การเปลี่ยนแปลงนโยบายนี้</h2>
+<p>เราอาจปรับปรุงนโยบายนี้เป็นครั้งคราว การเปลี่ยนแปลงที่สำคัญจะแจ้งทางอีเมลล่วงหน้าอย่างน้อย 14 วันก่อนมีผลใช้บังคับ และวันที่ "ปรับปรุงล่าสุด" ด้านบนของหน้านี้จะสะท้อนการเปลี่ยนแปลงด้วย การใช้ MindoDay ต่อหลังการเปลี่ยนแปลง ถือว่าคุณยอมรับนโยบายฉบับใหม่</p>
+
+<h2>12. ติดต่อเรา</h2>
+<p><strong>ผู้ดำเนินการ:</strong> MindoDay (ดำเนินการโดย ปานมาดา นิตินักปราชญ์ / Parnmada Nitinakprach, กรุงเทพมหานคร ประเทศไทย)<br />
+<strong>ติดต่อทั่วไป:</strong> <a href="mailto:hello@mindoday.com">hello@mindoday.com</a><br />
+<strong>เจ้าหน้าที่คุ้มครองข้อมูลส่วนบุคคล (DPO):</strong> <a href="mailto:privacy@mindoday.com">privacy@mindoday.com</a><br />
+<strong>รายงานช่องโหว่ด้านความปลอดภัย:</strong> <a href="mailto:security@mindoday.com">security@mindoday.com</a><br />
+<strong>คำถามทางกฎหมาย:</strong> <a href="mailto:legal@mindoday.com">legal@mindoday.com</a><br />
+<strong>ประเทศ:</strong> ประเทศไทย</p>
+<p>สำหรับคำขอเกี่ยวกับข้อมูลส่วนบุคคลโดยเฉพาะ กรุณาใช้ <a href="mailto:privacy@mindoday.com">privacy@mindoday.com</a> โดยระบุ "Privacy Request" ในช่อง subject</p>
+
+<footer>
+<p>🌿 &nbsp; <a href="/">กลับไปที่ MindoDay</a> &nbsp;·&nbsp; <a href="/terms.html">ข้อตกลงการให้บริการ</a></p>
+<p>© 2569 MindoDay · กรุงเทพมหานคร ประเทศไทย · mindoday.com</p>
+</footer>
+
+</div>
+</body>
+</html>
