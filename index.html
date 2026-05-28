@@ -1048,7 +1048,7 @@
             <Logo size="xl" />
             <p className="mt-3 text-g-charcoal text-base px-2 leading-snug">
               {_isThai
-                ? <>"การกลับมารู้จักตัวเอง —<br/>ในแบบที่คุณเป็น"</>
+                ? <>"เข้าใจตัวเอง —<br/>ในแบบที่คุณเป็น"</>
                 : <>"Becoming more at home<br/>in who you are."</>}
             </p>
 
@@ -1057,7 +1057,7 @@
               onClick={onContinueAnon}
               className="mt-9 w-full max-w-[300px] px-6 py-3.5 rounded-full bg-g-green text-white text-[15px] font-semibold transition-all active:scale-[0.98] active:bg-g-deep"
             >
-              {_isThai ? 'ฉันพร้อมแล้วที่จะเป็นตัวเอง !' : "I'm ready to feel like myself !"}
+              {_isThai ? 'เริ่มต้นกันเลย' : "I'm ready to feel like myself !"}
             </button>
 
             {/* B2 ERROR BANNER — sits above secondary stack when present.
@@ -1456,7 +1456,9 @@
       return (
         <div className="phone-frame fade-in">
           <div className="px-6 pt-6 pb-2"><BackArrow onClick={onBack} /></div>
-          <div className="flex-1 overflow-y-auto no-scrollbar px-7 pb-4">
+          {/* V57.1.4 — px-7 → px-5: wider form area so checkbox rows visually
+              anchor to left (match Canva mockup proportions). 16px wider total. */}
+          <div className="flex-1 overflow-y-auto no-scrollbar px-5 pb-4">
             <h2 className="text-[28px] font-serif text-g-charcoal text-center mt-3 mb-2">
               {_isThai ? 'สร้างบัญชีของคุณ' : 'Create your account'}
             </h2>
@@ -1583,15 +1585,18 @@
                 checkboxes gate formValid so Create-account stays disabled
                 until ticked. Sage accent matches brand. Links open in new
                 tab + noopener noreferrer for security. Bilingual via lang. */}
-            {/* V57.1.3: removed px-2 to flush-align checkboxes with form fields */}
+            {/* V57.1.3 (rev2): w-full block labels so each checkbox row fills the
+                form width — visually anchors to left edge even if text is short.
+                Negative-margin -mx-2 pulls slightly outside default text inset to
+                match Canva mockup alignment exactly. */}
             <div className="mt-5 space-y-3">
-              <label className="flex items-start gap-3 text-[13px] text-g-charcoal cursor-pointer">
+              <label className="flex items-start gap-3 text-[13px] text-g-charcoal cursor-pointer w-full text-left">
                 <input
                   type="checkbox"
                   checked={agreedAge}
                   onChange={(e) => setAgreedAge(e.target.checked)}
                   disabled={pending}
-                  className="mt-0.5 w-4 h-4 accent-g-green"
+                  className="mt-0.5 w-4 h-4 accent-g-green flex-shrink-0"
                   aria-label={_isThai ? 'ฉันอายุ 16 ปีขึ้นไป' : 'I am 16 years or older'}
                 />
                 <span>
@@ -1601,13 +1606,13 @@
                 </span>
               </label>
 
-              <label className="flex items-start gap-3 text-[13px] text-g-charcoal cursor-pointer">
+              <label className="flex items-start gap-3 text-[13px] text-g-charcoal cursor-pointer w-full text-left">
                 <input
                   type="checkbox"
                   checked={agreedTos}
                   onChange={(e) => setAgreedTos(e.target.checked)}
                   disabled={pending}
-                  className="mt-0.5 w-4 h-4 accent-g-green"
+                  className="mt-0.5 w-4 h-4 accent-g-green flex-shrink-0"
                   aria-label={_isThai
                     ? 'ฉันยอมรับข้อกำหนดและนโยบายความเป็นส่วนตัว'
                     : 'I agree to the Terms and Privacy Policy'}
@@ -5895,7 +5900,9 @@
             MindoDay
           </h1>
           <p className="mt-2 text-g-charcoal text-[14px] italic px-2 leading-snug">
-            Becoming more at home in who you are.
+            {_isThai
+              ? 'เข้าใจตัวเอง — ในแบบที่คุณเป็น'
+              : 'Becoming more at home in who you are.'}
           </p>
         </div>
 
