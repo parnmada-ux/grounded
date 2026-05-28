@@ -1048,7 +1048,7 @@
             <Logo size="xl" />
             <p className="mt-3 text-g-charcoal text-base px-2 leading-snug">
               {_isThai
-                ? <>"เข้าใจตัวเอง —<br/>ในแบบที่คุณเป็น"</>
+                ? '"เข้าใจตัวเอง — ในแบบที่คุณเป็น"'
                 : <>"Becoming more at home<br/>in who you are."</>}
             </p>
 
@@ -1456,9 +1456,9 @@
       return (
         <div className="phone-frame fade-in">
           <div className="px-6 pt-6 pb-2"><BackArrow onClick={onBack} /></div>
-          {/* V57.1.4 — px-7 → px-5: wider form area so checkbox rows visually
-              anchor to left (match Canva mockup proportions). 16px wider total. */}
-          <div className="flex-1 overflow-y-auto no-scrollbar px-5 pb-4">
+          {/* V57.1.5 — px-5 → px-4: even wider form area. Combined with bigger
+              checkbox text + flush-left wrapper below = anchors checkboxes left. */}
+          <div className="flex-1 overflow-y-auto no-scrollbar px-4 pb-4">
             <h2 className="text-[28px] font-serif text-g-charcoal text-center mt-3 mb-2">
               {_isThai ? 'สร้างบัญชีของคุณ' : 'Create your account'}
             </h2>
@@ -1590,7 +1590,7 @@
                 Negative-margin -mx-2 pulls slightly outside default text inset to
                 match Canva mockup alignment exactly. */}
             <div className="mt-5 space-y-3">
-              <label className="flex items-start gap-3 text-[13px] text-g-charcoal cursor-pointer w-full text-left">
+              <label className="flex items-start gap-3 text-[14px] text-g-charcoal cursor-pointer w-full text-left">
                 <input
                   type="checkbox"
                   checked={agreedAge}
@@ -1606,7 +1606,7 @@
                 </span>
               </label>
 
-              <label className="flex items-start gap-3 text-[13px] text-g-charcoal cursor-pointer w-full text-left">
+              <label className="flex items-start gap-3 text-[14px] text-g-charcoal cursor-pointer w-full text-left">
                 <input
                   type="checkbox"
                   checked={agreedTos}
