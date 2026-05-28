@@ -1019,8 +1019,8 @@
             <Logo size="xl" />
             <p className="mt-3 text-g-charcoal text-base px-2 leading-snug">
               {_isThai
-                ? '"การกลับมารู้จักตัวเอง — ในแบบที่คุณเป็น"'
-                : '"Becoming more at home in who you are."'}
+                ? <>"การกลับมารู้จักตัวเอง —<br/>ในแบบที่คุณเป็น"</>
+                : <>"Becoming more at home<br/>in who you are."</>}
             </p>
 
             {/* PRIMARY — anonymous-first entry. Routes to Resonance Check funnel. */}
@@ -5604,7 +5604,7 @@
                     <p className="text-g-charcoal text-[14px] leading-snug">{_isThai ? h.nameTh : h.nameEn}</p>
                     <p className="text-g-gray text-[12px] mt-0.5">{_isThai ? h.hoursTh : h.hoursEn}</p>
                   </div>
-                  <span className="text-g-green text-[16px] font-bold tracking-wide">{h.number}</span>
+                  <span className="text-g-green text-[15px] font-bold tracking-wide">{h.number}</span>
                 </a>
               ))}
             </div>
