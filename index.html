@@ -4673,27 +4673,19 @@
               Done
             </button>
           </div>
-          <div className="flex-1 overflow-y-auto no-scrollbar px-6 pt-2 pb-6">
+          <div className="flex-1 overflow-y-auto no-scrollbar px-6 pt-4 pb-8">
             {/* Profile pic — V57 Item 6: upload UI was theater (Audit 2.1).
                 Gated behind FEATURE_PROFILE_PHOTO until real Storage upload
-                lands in v1.1. Default avatar is a static circle; no tap
-                target, no broken-pencil affordance. */}
-            <div className="flex justify-center mt-2 mb-5">
-              {FEATURE_PROFILE_PHOTO ? (
+                lands in v1.1. V57.1.2 (Parn): when no real photo, hide the
+                avatar block entirely (no default leaf circle) — tighter layout. */}
+            {FEATURE_PROFILE_PHOTO && (
+              <div className="flex justify-center mt-2 mb-5">
                 <button onClick={() => setShowPicSheet(true)} className="relative">
                   <div className="w-24 h-24 rounded-full bg-g-line flex items-center justify-center text-g-green text-4xl">👤</div>
                   <div className="absolute bottom-0 right-0 w-7 h-7 rounded-full bg-g-green flex items-center justify-center text-white text-xs">✎</div>
                 </button>
-              ) : (
-                <div
-                  className="w-24 h-24 rounded-full flex items-center justify-center text-3xl"
-                  style={{ backgroundColor: '#E8F0EC', color: '#5B8A72' }}
-                  aria-label="Profile photo"
-                >
-                  {(name && name.trim().charAt(0).toUpperCase()) || '🌿'}
-                </div>
-              )}
-            </div>
+              </div>
+            )}
 
             {/* Display name — inline editable, writes to draft */}
             <div className="mb-3">
@@ -5583,7 +5575,7 @@
             <h3 className="font-serif text-[20px] text-g-charcoal">{_isThai ? 'สายด่วนช่วยเหลือ' : 'Crisis Resources'}</h3>
             <button onClick={onHome} className="text-g-charcoal text-base">{_isThai ? 'เสร็จสิ้น' : 'Done'}</button>
           </div>
-          <div className="flex-1 overflow-y-auto no-scrollbar px-6 pt-3 pb-6">
+          <div className="flex-1 overflow-y-auto no-scrollbar px-6 pt-4 pb-8">
             <div className="card-outline p-5 mb-3">
               <p className="text-g-charcoal text-sm leading-relaxed">
                 {_isThai
