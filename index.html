@@ -1456,9 +1456,10 @@
       return (
         <div className="phone-frame fade-in">
           <div className="px-6 pt-6 pb-2"><BackArrow onClick={onBack} /></div>
-          {/* V57.1.5 — px-5 → px-4: even wider form area. Combined with bigger
-              checkbox text + flush-left wrapper below = anchors checkboxes left. */}
-          <div className="flex-1 overflow-y-auto no-scrollbar px-4 pb-4">
+          {/* V57.1.6 — revert direction. Parn wanted MORE side space (like
+              V51 "Create your account" original design), not less. Going
+              px-4 → px-8 (4px MORE than original px-7) for max breathing room. */}
+          <div className="flex-1 overflow-y-auto no-scrollbar px-8 pb-4">
             <h2 className="text-[28px] font-serif text-g-charcoal text-center mt-3 mb-2">
               {_isThai ? 'สร้างบัญชีของคุณ' : 'Create your account'}
             </h2>
