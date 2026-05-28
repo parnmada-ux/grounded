@@ -1,4 +1,24 @@
 <!--
+  V57 — May 27, 2026 (launch fixes per DISPATCH_FE_V57_launch_fixes.md):
+    Item 1  Privacy/Terms links at signup (replace "coming soon")
+    Item 2  Explicit Terms checkbox at signup (gates Create-account)
+    Item 3  PrivacyScreen "Read the full policy" → window.open(/privacy)
+    Item 4  Fill "[region] servers" placeholder → "Tokyo, Asia (Firebase asia-northeast1)"
+    Item 5  Age gate "I am 16+" checkbox at signup (gates Create-account)
+    Item 6  Profile photo upload hidden behind FEATURE_PROFILE_PHOTO flag (was UI-only mock)
+    Item 7  ExportDataScreen mock → real mailto request flow (parnparnmada@gmail.com, 7-day SLA copy)
+    Item 8  TH 50-strings Hybrid B+ — extracted to STRINGS_TO_TRANSLATE.md, awaiting Parn self-review then integration. V58 (~7 June) lands full TH.
+    Item 12 PaywallScreen rebuild — Resubscribe button → Stripe Customer Portal + Sign-out fallback + error banner
+  CONFIGURATION ADDITIONS:
+    PRIVACY_URL_TH/EN + TERMS_URL_TH/EN constants near top of script
+    FEATURE_PROFILE_PHOTO = false (defer real upload to v1.1)
+
+  V56 — May 25, 2026 — Hide ←/Done on LAPSED branch (UX polish on V55 trap fix)
+  V55 — May 25, 2026 — P0 trial-trap root cause fix (normalizeSubStatus + LAPSED safe default + Sign Out escape)
+  V54 — May 24, 2026 — Home trial-end-date info banner (post-Stripe-live polish)
+  V53 — May 24, 2026 — Cowork 5 V54-marker batch: manage subscription button, member-since full date, trial-end row, trial copy honesty, double-heading fix
+  V52 — May 23, 2026 — favicon + apple-touch + manifest.webmanifest + 4 icon PNGs + mobile-web-app-capable
+  V51 — May 23, 2026 — Pattern 3B deferred Firebase account creation + brand sweep Grounded → MindoDay
   V50 — May 22, 2026
   Account lifecycle + email verification batch (paired with Backend v26.2/v27.0):
   CRITICAL:
@@ -320,6 +340,61 @@
     // Restores 3 gated entry points: aligned_self handler (anon → trial_welcome),
     // no_pressure handler (anon → trial_welcome), HomeScreen Day-N countdown banner.
     const PHASE_2_TRIAL_UI_ENABLED = true;
+
+    // V57 — Confirmed live policy URLs (Parn, 27 May 2026, HTTP/2 200 verified).
+    // TH is the default surface (Thai-first product); EN gets the `-en` suffix.
+    // Used by: SignUpScreen passive disclaimer + explicit consent checkboxes,
+    // PrivacyScreen "Read the full policy" button.
+    const PRIVACY_URL_TH = 'https://mindoday.com/privacy';
+    const TERMS_URL_TH   = 'https://mindoday.com/terms';
+    const PRIVACY_URL_EN = 'https://mindoday.com/privacy-en';
+    const TERMS_URL_EN   = 'https://mindoday.com/terms-en';
+
+    // V57 — Feature flags for surfaces that ship later. Profile photo upload
+    // is a v1.1 item (real Storage + size guard + format check); the picker
+    // UI in V56 was UI-only theater (Audit Finding 2.1). Hidden behind this
+    // flag until the real upload lands. Flip to true to re-enable the V56 UI.
+    const FEATURE_PROFILE_PHOTO = false;
+
+    // V57.1 — Item 13 (P0 late-add). Crisis hotlines surfaced in the new
+    // CrisisResourcesScreen + GroundMe Hard inline list. All 4 web-verified
+    // by Parn before this lands (verification log: Cowork 7 L7). Phone
+    // numbers are tap-to-call via `tel:` href; tap target ≥ 44px per HIG.
+    // International users get findahelpline.com fallback row at bottom.
+    const CRISIS_HOTLINES = [
+      {
+        number: '1323',
+        dial: '1323',
+        nameEn: 'Department of Mental Health Hotline',
+        nameTh: 'สายด่วนสุขภาพจิต กรมสุขภาพจิต',
+        hoursEn: '24 hrs',
+        hoursTh: '24 ชั่วโมง',
+      },
+      {
+        number: '1387',
+        dial: '1387',
+        nameEn: 'Mental Health Crisis Hotline',
+        nameTh: 'สายด่วนวิกฤตสุขภาพจิต',
+        hoursEn: '24 hrs',
+        hoursTh: '24 ชั่วโมง',
+      },
+      {
+        number: '02-713-6793',
+        dial: '027136793',
+        nameEn: 'Samaritans Thailand',
+        nameTh: 'สมาคมสะมาริตันส์ประเทศไทย (รับฟัง ไม่ตัดสิน)',
+        hoursEn: 'Listening line',
+        hoursTh: 'สายรับฟัง',
+      },
+      {
+        number: '1669',
+        dial: '1669',
+        nameEn: 'Emergency Medical Service',
+        nameTh: 'หน่วยกู้ชีพฉุกเฉิน',
+        hoursEn: '24 hrs',
+        hoursTh: '24 ชั่วโมง',
+      },
+    ];
 
     // V16/Bug9: dev panel gate — hidden in production. Surfaced on localhost,
     // file:// origins, or via ?dev=1 query (lets Parn test prod on phone).
@@ -717,20 +792,33 @@
       </button>
     );
 
-    const BottomNav = ({ active, onNav }) => (
-      <div className="flex items-center border-t border-g-line bg-g-sage"
-           style={{paddingBottom: 'env(safe-area-inset-bottom, 0px)'}}>
-        {[
-          { key: 'home',     label: 'Home' },
-          { key: 'practice', label: 'Practice' },
-          { key: 'mirror',   label: 'Profile' },
-          { key: 'settings', label: 'Settings' },
-        ].map(t => (
-          <button key={t.key} onClick={() => onNav(t.key)}
-            className={`nav-tab ${active === t.key ? 'active' : ''}`}>{t.label}</button>
-        ))}
-      </div>
-    );
+    // V57.1 — BottomNav now reads `lang` from window.MINDODAY_LANG (set by the
+    // App component on data-change). Falls back to 'en' if not set yet so the
+    // first paint before hydration doesn't render `undefined`. This avoids
+    // prop-drilling lang through every screen that mounts BottomNav.
+    const BottomNav = ({ active, onNav }) => {
+      const _lang = (typeof window !== 'undefined' && window.MINDODAY_LANG) || 'en';
+      const _isThai = _lang === 'th';
+      // STRINGS_TO_TRANSLATE.md row 66-69 — Parn approved. App-wide bottom nav
+      // shows 4 tabs; "Profile" tab is the Mirror surface in this app's vocab.
+      const TABS = [
+        { key: 'home',     en: 'Home',     th: 'หน้าหลัก' },
+        { key: 'practice', en: 'Practice', th: 'ฝึก' },
+        { key: 'mirror',   en: 'Profile',  th: 'โปรไฟล์' },
+        { key: 'settings', en: 'Settings', th: 'ตั้งค่า' },
+      ];
+      return (
+        <div className="flex items-center border-t border-g-line bg-g-sage"
+             style={{paddingBottom: 'env(safe-area-inset-bottom, 0px)'}}>
+          {TABS.map(t => (
+            <button key={t.key} onClick={() => onNav(t.key)}
+              className={`nav-tab ${active === t.key ? 'active' : ''}`}>
+              {_isThai ? t.th : t.en}
+            </button>
+          ))}
+        </div>
+      );
+    };
 
     // ============================================================
     // BRAND ICONS (Google / Apple / Facebook) — inline SVG
@@ -900,9 +988,10 @@
     // V15/B2: Google button shows inline sage spinner while in-flight, and a
     // soft cream/muted-red error banner appears above the secondary stack on
     // failure. User-cancelled popups are silent (mapAuthError returns null).
-    const WelcomeScreen = ({ hasGoogleAuth, onGoogle, onSignUpEmail, onSignIn, onContinueAnon }) => {
+    const WelcomeScreen = ({ hasGoogleAuth, onGoogle, onSignUpEmail, onSignIn, onContinueAnon, lang }) => {
       const [pending, setPending] = useState(null);   // null | 'google'
       const [error, setError]     = useState(null);   // warm string | null
+      const _isThai = lang === 'th';
 
       const handleGoogle = async () => {
         if (pending) return;
@@ -928,14 +1017,18 @@
         <div className="phone-frame fade-in">
           <div className="flex-1 flex flex-col items-center justify-center text-center px-8">
             <Logo size="xl" />
-            <p className="mt-3 text-g-charcoal text-base px-2 leading-snug">"Becoming more at home<br/>in who you are."</p>
+            <p className="mt-3 text-g-charcoal text-base px-2 leading-snug">
+              {_isThai
+                ? '"การกลับมารู้จักตัวเอง — ในแบบที่คุณเป็น"'
+                : '"Becoming more at home in who you are."'}
+            </p>
 
             {/* PRIMARY — anonymous-first entry. Routes to Resonance Check funnel. */}
             <button
               onClick={onContinueAnon}
               className="mt-9 w-full max-w-[300px] px-6 py-3.5 rounded-full bg-g-green text-white text-[15px] font-semibold transition-all active:scale-[0.98] active:bg-g-deep"
             >
-              I'm ready to feel like myself !
+              {_isThai ? 'ฉันพร้อมแล้วที่จะเป็นตัวเอง !' : "I'm ready to feel like myself !"}
             </button>
 
             {/* B2 ERROR BANNER — sits above secondary stack when present.
@@ -967,21 +1060,23 @@
                   ) : (
                     <GoogleIcon size={16} />
                   )}
-                  <span>Continue with Google</span>
+                  <span>{_isThai ? 'ดำเนินการต่อด้วย Google' : 'Continue with Google'}</span>
                 </button>
               )}
               <button
                 onClick={onSignUpEmail}
                 className="w-full px-5 py-3 rounded-full bg-white border border-g-line text-g-deep text-[14px] font-semibold transition-all active:scale-[0.98] active:bg-g-sage"
               >
-                Sign up with email
+                {_isThai ? 'สมัครด้วยอีเมล' : 'Sign up with email'}
               </button>
             </div>
 
             {/* TERTIARY — returning-user footer. */}
             <p className="mt-6 text-g-gray text-xs">
-              Already have an account?{' '}
-              <button onClick={onSignIn} className="underline text-g-deep font-semibold">Sign in</button>
+              {_isThai ? 'มีบัญชีอยู่แล้ว? ' : 'Already have an account? '}
+              <button onClick={onSignIn} className="underline text-g-deep font-semibold">
+                {_isThai ? 'เข้าสู่ระบบ' : 'Sign in'}
+              </button>
             </p>
           </div>
         </div>
@@ -1202,17 +1297,23 @@
     //
     //   onSubmitted(email) now passes the typed email so the App can populate
     //   verifyEmailContext directly — there's no currentUser to inspect yet.
-    const SignUpScreen = ({ groundedAuth, onSubmitted, onSignIn, onSignInInstead, onBack, onDuplicateEmailScheduledCheck }) => {
+    const SignUpScreen = ({ groundedAuth, onSubmitted, onSignIn, onSignInInstead, onBack, onDuplicateEmailScheduledCheck, lang }) => {
       const [name, setName]         = useState('');
       const [email, setEmail]       = useState('');
       const [password, setPassword] = useState('');
       const [showPwd, setShowPwd]   = useState(false);
       const [pending, setPending]   = useState(false);
       const [error, setError]       = useState(null);   // string | { message, code } | null
+      // V57 — explicit consent (Items 2 + 5). PDPA + GDPR require recordable
+      // consent for personal-data collection. Both checkboxes gate formValid
+      // so the Create-account button is disabled until both are checked.
+      const [agreedTos, setAgreedTos] = useState(false);
+      const [agreedAge, setAgreedAge] = useState(false);
+      const _isThai = lang === 'th';
 
       const emailValid    = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
       const passwordValid = password.length >= 8;
-      const formValid     = emailValid && passwordValid && !pending;
+      const formValid     = emailValid && passwordValid && agreedTos && agreedAge && !pending;
 
       const handleSubmit = async () => {
         if (!formValid) return;
@@ -1315,14 +1416,20 @@
         <div className="phone-frame fade-in">
           <div className="px-6 pt-6 pb-2"><BackArrow onClick={onBack} /></div>
           <div className="flex-1 overflow-y-auto no-scrollbar px-7 pb-4">
-            <h2 className="text-[28px] font-serif text-g-charcoal text-center mt-3 mb-2">Create your account</h2>
-            <p className="text-center text-g-gray text-sm mb-6">Sign up to start your daily practice — and feel grounded in who you are.</p>
+            <h2 className="text-[28px] font-serif text-g-charcoal text-center mt-3 mb-2">
+              {_isThai ? 'สร้างบัญชีของคุณ' : 'Create your account'}
+            </h2>
+            <p className="text-center text-g-gray text-sm mb-6">
+              {_isThai
+                ? 'สมัครเพื่อเริ่มเข้าใจตัวเองมากขึ้นทุกวัน — แล้วรู้สึกมั่นคงในแบบที่คุณเป็น'
+                : 'Sign up to start your daily practice — and feel grounded in who you are.'}
+            </p>
 
             <div className="space-y-3">
               <input
                 className="input-field"
                 type="text"
-                placeholder="What should we call you? (optional)"
+                placeholder={_isThai ? 'อยากให้เราเรียกคุณว่าอะไร? (ไม่บังคับ)' : 'What should we call you? (optional)'}
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 autoComplete="given-name"
@@ -1331,7 +1438,7 @@
               <input
                 className="input-field"
                 type="email"
-                placeholder="Your email"
+                placeholder={_isThai ? 'อีเมลของคุณ' : 'Your email'}
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 autoCapitalize="none"
@@ -1343,7 +1450,7 @@
                 <input
                   className="input-field pr-12"
                   type={showPwd ? 'text' : 'password'}
-                  placeholder="8+ characters"
+                  placeholder={_isThai ? '8 ตัวอักษรขึ้นไป' : '8+ characters'}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   autoComplete="new-password"
@@ -1431,6 +1538,58 @@
               </div>
             )}
 
+            {/* V57 — Items 2 + 5. Explicit consent (PDPA + GDPR). Both
+                checkboxes gate formValid so Create-account stays disabled
+                until ticked. Sage accent matches brand. Links open in new
+                tab + noopener noreferrer for security. Bilingual via lang. */}
+            <div className="mt-5 space-y-3 px-2">
+              <label className="flex items-start gap-3 text-[13px] text-g-charcoal cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={agreedAge}
+                  onChange={(e) => setAgreedAge(e.target.checked)}
+                  disabled={pending}
+                  className="mt-0.5 w-4 h-4 accent-g-green"
+                  aria-label={_isThai ? 'ฉันอายุ 16 ปีขึ้นไป' : 'I am 16 years or older'}
+                />
+                <span>
+                  {_isThai
+                    ? 'ฉันอายุ 16 ปีขึ้นไป'
+                    : 'I am 16 years or older'}
+                </span>
+              </label>
+
+              <label className="flex items-start gap-3 text-[13px] text-g-charcoal cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={agreedTos}
+                  onChange={(e) => setAgreedTos(e.target.checked)}
+                  disabled={pending}
+                  className="mt-0.5 w-4 h-4 accent-g-green"
+                  aria-label={_isThai
+                    ? 'ฉันยอมรับข้อกำหนดและนโยบายความเป็นส่วนตัว'
+                    : 'I agree to the Terms and Privacy Policy'}
+                />
+                <span>
+                  {_isThai ? (
+                    <React.Fragment>
+                      ฉันยอมรับ{' '}
+                      <a href={TERMS_URL_TH} target="_blank" rel="noopener noreferrer" className="underline text-g-deep">ข้อกำหนด</a>{' '}
+                      และ{' '}
+                      <a href={PRIVACY_URL_TH} target="_blank" rel="noopener noreferrer" className="underline text-g-deep">นโยบายความเป็นส่วนตัว</a>
+                    </React.Fragment>
+                  ) : (
+                    <React.Fragment>
+                      I agree to the{' '}
+                      <a href={TERMS_URL_EN} target="_blank" rel="noopener noreferrer" className="underline text-g-deep">Terms</a>{' '}
+                      and{' '}
+                      <a href={PRIVACY_URL_EN} target="_blank" rel="noopener noreferrer" className="underline text-g-deep">Privacy Policy</a>
+                    </React.Fragment>
+                  )}
+                </span>
+              </label>
+            </div>
+
             <div className="mt-6 flex justify-center">
               <button
                 onClick={handleSubmit}
@@ -1444,19 +1603,37 @@
                     <path d="M12 2 a10 10 0 0 1 10 10" stroke="#FFFFFF" strokeWidth="3" strokeLinecap="round" />
                   </svg>
                 )}
-                <span>Create account</span>
+                <span>{_isThai ? 'สร้างบัญชี' : 'Create account'}</span>
               </button>
             </div>
 
+            {/* V57 — Item 1. Passive disclaimer with REAL links (was "coming
+                soon"). Sits below the button as a redundant reminder; primary
+                consent comes from the checkboxes above. */}
             <p className="text-center text-[11px] text-g-gray mt-4 px-2 leading-relaxed">
-              By signing up you agree to your data being stored securely.<br/>
-              Privacy policy coming soon.
+              {_isThai ? (
+                <React.Fragment>
+                  เมื่อสร้างบัญชี คุณยอมรับ{' '}
+                  <a href={TERMS_URL_TH} target="_blank" rel="noopener noreferrer" className="underline text-g-deep">ข้อกำหนดการใช้งาน</a>{' '}
+                  และ{' '}
+                  <a href={PRIVACY_URL_TH} target="_blank" rel="noopener noreferrer" className="underline text-g-deep">นโยบายความเป็นส่วนตัว</a> ของเรา
+                </React.Fragment>
+              ) : (
+                <React.Fragment>
+                  By creating an account, you agree to our{' '}
+                  <a href={TERMS_URL_EN} target="_blank" rel="noopener noreferrer" className="underline text-g-deep">Terms of Service</a>{' '}
+                  and{' '}
+                  <a href={PRIVACY_URL_EN} target="_blank" rel="noopener noreferrer" className="underline text-g-deep">Privacy Policy</a>.
+                </React.Fragment>
+              )}
             </p>
           </div>
           <div className="px-6 pb-6 text-center">
             <p className="text-sm text-g-gray">
-              Have an account?{' '}
-              <button onClick={onSignIn} className="text-g-deep font-semibold underline">Sign in</button>
+              {_isThai ? 'มีบัญชีอยู่แล้ว? ' : 'Have an account? '}
+              <button onClick={onSignIn} className="text-g-deep font-semibold underline">
+                {_isThai ? 'เข้าสู่ระบบ' : 'Sign in'}
+              </button>
             </p>
           </div>
         </div>
@@ -2444,7 +2621,7 @@
     // ============================================================
     // 15C. GROUND ME — IMMEDIATE SUPPORT
     // ============================================================
-    const GroundMeHard = ({ data, onMoment, onRemember, onHome }) => (
+    const GroundMeHard = ({ data, onMoment, onRemember, onHome, onCrisisResources }) => (
       <div className="phone-frame fade-in">
         <div className="px-6 pt-6 pb-2"><BackArrow onClick={onHome} label="Home" /></div>
         <div className="flex-1 overflow-y-auto no-scrollbar px-6">
@@ -2454,12 +2631,29 @@
             <p className="text-g-charcoal text-sm leading-relaxed">You don't have to do this alone.</p>
             <p className="text-g-charcoal text-sm leading-relaxed mt-3">Talk to someone you trust — a friend, family, or professional.</p>
             <div className="border-t border-g-line my-4"></div>
-            <p className="text-g-charcoal text-sm leading-relaxed text-center">🇹🇭 Thailand Mental Health</p>
-            <p className="text-g-green font-bold text-sm leading-relaxed text-center">Hotline: 1323 (24 hrs)</p>
-            <p className="text-g-charcoal text-sm leading-relaxed text-center mt-3">🌐 International Resources:</p>
-            <p className="text-g-green font-bold text-sm leading-relaxed text-center">findahelpline.com</p>
-            <div className="border-t border-g-line my-3"></div>
-            <p className="text-g-gray text-sm italic text-center">(More resources coming soon)</p>
+            {/* V57.1 — Item 13: surface all 4 Thai hotlines + findahelpline.com.
+                Each row is tap-to-call via tel: href. */}
+            <p className="text-g-charcoal text-sm leading-relaxed text-center mb-2">🇹🇭 Thailand crisis lines</p>
+            <div className="space-y-1.5">
+              {CRISIS_HOTLINES.map(h => (
+                <a key={h.dial} href={'tel:' + h.dial}
+                   className="flex items-baseline justify-between gap-2 px-1 py-1">
+                  <span className="text-g-charcoal text-[13px] leading-snug">{h.nameEn}</span>
+                  <span className="text-g-green font-bold text-[14px] underline">{h.number}</span>
+                </a>
+              ))}
+            </div>
+            <p className="text-g-charcoal text-sm leading-relaxed text-center mt-3">🌐 Outside Thailand:</p>
+            <a href="https://findahelpline.com" target="_blank" rel="noopener noreferrer"
+               className="block text-g-green font-bold text-sm leading-relaxed text-center underline">
+              findahelpline.com
+            </a>
+            {typeof onCrisisResources === 'function' && (
+              <button onClick={onCrisisResources}
+                      className="block mx-auto mt-4 text-g-deep text-sm underline font-semibold">
+                Full crisis-resources screen →
+              </button>
+            )}
           </div>
           <div className="text-center mt-5">
             <button onClick={onMoment} className="text-g-deep text-sm underline font-semibold">🫁 Take a moment →</button>
@@ -3515,19 +3709,23 @@
     // window.confirm) so the brand frame stays intact for this small but
     // emotional moment. On confirm: onLogout fires async groundedAuth.signOut(),
     // A3 listener catches → J1 routes to welcome.
-    const SettingsScreen = ({ onHome, onNav, onPremium, onSupport, onLogout, onAccount, onNotif, onLanguage, onExport, onPrivacy }) => {
+    const SettingsScreen = ({ onHome, onNav, onPremium, onSupport, onLogout, onAccount, onNotif, onLanguage, onExport, onPrivacy, onCrisisResources, lang }) => {
       const [showConfirm, setShowConfirm] = useState(false);
+      const _isThai = lang === 'th';
       const items = [
-        { label:'Account', action: onAccount },
-        { label:'Notifications & reminders', action: onNotif },
+        { label: _isThai ? 'บัญชี' : 'Account', action: onAccount },
+        { label: _isThai ? 'การแจ้งเตือน' : 'Notifications & reminders', action: onNotif },
         // V38: "Upgrade to Premium" → "Subscription" (state-aware screen
         // handles trial/active/lapsed labeling itself; Settings menu is now
         // a neutral entry point).
-        { label:'Subscription', action: onPremium },
-        { label:'Language', action: onLanguage },
-        { label:'Export my data', action: onExport },
-        { label:'Privacy policy', action: onPrivacy },
-        { label:'🌱 Support & Resources', action: onSupport },
+        { label: _isThai ? 'สมาชิก' : 'Subscription', action: onPremium },
+        { label: _isThai ? 'ภาษา' : 'Language', action: onLanguage },
+        { label: _isThai ? 'ส่งออกข้อมูล' : 'Export my data', action: onExport },
+        { label: _isThai ? 'นโยบายความเป็นส่วนตัว' : 'Privacy policy', action: onPrivacy },
+        // V57.1 — Item 13. Direct entry to the 4-hotline Crisis Resources screen.
+        // Surfaced inside Settings so a user never needs to remember a route.
+        { label: _isThai ? '📞 สายด่วนช่วยเหลือ' : '📞 Crisis Resources', action: onCrisisResources },
+        { label: _isThai ? '🌱 ความช่วยเหลือและทรัพยากร' : '🌱 Support & Resources', action: onSupport },
       ];
       return (
         <div className="phone-frame fade-in">
@@ -4476,12 +4674,25 @@
             </button>
           </div>
           <div className="flex-1 overflow-y-auto no-scrollbar px-6 pt-2 pb-6">
-            {/* Profile pic */}
+            {/* Profile pic — V57 Item 6: upload UI was theater (Audit 2.1).
+                Gated behind FEATURE_PROFILE_PHOTO until real Storage upload
+                lands in v1.1. Default avatar is a static circle; no tap
+                target, no broken-pencil affordance. */}
             <div className="flex justify-center mt-2 mb-5">
-              <button onClick={() => setShowPicSheet(true)} className="relative">
-                <div className="w-24 h-24 rounded-full bg-g-line flex items-center justify-center text-g-green text-4xl">👤</div>
-                <div className="absolute bottom-0 right-0 w-7 h-7 rounded-full bg-g-green flex items-center justify-center text-white text-xs">✎</div>
-              </button>
+              {FEATURE_PROFILE_PHOTO ? (
+                <button onClick={() => setShowPicSheet(true)} className="relative">
+                  <div className="w-24 h-24 rounded-full bg-g-line flex items-center justify-center text-g-green text-4xl">👤</div>
+                  <div className="absolute bottom-0 right-0 w-7 h-7 rounded-full bg-g-green flex items-center justify-center text-white text-xs">✎</div>
+                </button>
+              ) : (
+                <div
+                  className="w-24 h-24 rounded-full flex items-center justify-center text-3xl"
+                  style={{ backgroundColor: '#E8F0EC', color: '#5B8A72' }}
+                  aria-label="Profile photo"
+                >
+                  {(name && name.trim().charAt(0).toUpperCase()) || '🌿'}
+                </div>
+              )}
             </div>
 
             {/* Display name — inline editable, writes to draft */}
@@ -4687,8 +4898,12 @@
             <p className="text-center text-g-gray text-[12px] italic mt-2">"This will remove everything without a copy."</p>
           </div>
 
-          {/* Profile pic source picker (bottom sheet) */}
-          {showPicSheet && (
+          {/* Profile pic source picker (bottom sheet) — V57 Item 6: gated
+              behind FEATURE_PROFILE_PHOTO. The 3 options (Take a photo /
+              Choose from gallery / Remove current photo) were all the same
+              no-op closing the sheet (Audit Finding 2.1). Defer to v1.1
+              when real Storage upload + size/format guard ship. */}
+          {FEATURE_PROFILE_PHOTO && showPicSheet && (
             <div className="absolute inset-0 z-50 flex items-end justify-center"
                  style={{background:'rgba(0,0,0,0.4)'}}
                  onClick={() => setShowPicSheet(false)}>
@@ -5227,34 +5442,72 @@
     // ============================================================
     // EXPORT MY DATA (Settings → Export my data)
     // ============================================================
-    const ExportDataScreen = ({ data, onBack, onHome }) => {
-      const email = (data.user && data.user.email) || 'your account email';
-      const [sent, setSent] = useState(false);
+    // V57 — Item 7. ExportDataScreen — was a UI-only mock that flipped a
+    // local `sent` state and never sent anything (Audit Finding 5.1). Real
+    // automated export (Worker /exportEmail endpoint + PDF/JSON generation)
+    // is a v1.1 item. Until then: user emails parnparnmada@gmail.com with a
+    // prefilled subject/body; Parn handles manually within 7 days. Honest
+    // copy + working mailto = no broken "Sent ✓" lie.
+    const ExportDataScreen = ({ data, onBack, onHome, lang }) => {
+      const accountEmail = (data.user && data.user.email) || '';
+      const _isThai = lang === 'th';
+      const handleMailto = () => {
+        const subject = _isThai
+          ? 'ขอส่งออกข้อมูลของฉัน'
+          : 'Request data export';
+        const bodyLines = _isThai
+          ? [
+              'สวัสดีค่ะ ฉันขอส่งออกข้อมูลของฉันค่ะ',
+              '',
+              'อีเมลบัญชี: ' + (accountEmail || '(โปรดระบุ)'),
+            ]
+          : [
+              'Hi,',
+              '',
+              'I would like to request an export of my MindoDay data.',
+              '',
+              'Account email: ' + (accountEmail || '(please fill in)'),
+            ];
+        const body = bodyLines.join('\r\n');
+        const href = 'mailto:parnparnmada@gmail.com'
+          + '?subject=' + encodeURIComponent(subject)
+          + '&body='    + encodeURIComponent(body);
+        window.location.href = href;
+      };
       return (
         <div className="phone-frame fade-in">
           <div className="px-6 pt-6 pb-2 flex items-center justify-between">
             <BackArrow onClick={onBack} />
-            <h3 className="font-serif text-[20px] text-g-charcoal">Export your data</h3>
-            <button onClick={onHome} className="text-g-charcoal text-base">Done</button>
+            <h3 className="font-serif text-[20px] text-g-charcoal">{_isThai ? 'ส่งออกข้อมูล' : 'Export your data'}</h3>
+            <button onClick={onHome} className="text-g-charcoal text-base">{_isThai ? 'เสร็จสิ้น' : 'Done'}</button>
           </div>
           <div className="flex-1 overflow-y-auto no-scrollbar px-6 pt-3">
             <div className="card-outline p-6">
-              <p className="text-center text-g-charcoal text-[15px]">Your data is yours. Always.</p>
+              <p className="text-center text-g-charcoal text-[15px]">{_isThai ? 'ข้อมูลของคุณเป็นของคุณ เสมอ' : 'Your data is yours. Always.'}</p>
               <div className="border-t border-g-line my-4"></div>
-              <p className="text-center font-bold text-g-charcoal text-[14px] tracking-wide mb-3">WHAT'S INCLUDED</p>
+              <p className="text-center font-bold text-g-charcoal text-[14px] tracking-wide mb-3">{_isThai ? 'สิ่งที่รวมอยู่' : "WHAT'S INCLUDED"}</p>
               <div className="text-center text-g-charcoal text-[14px] space-y-1.5">
-                <p>✓ Mirror answers &amp; values</p>
-                <p>✓ Reflection entries</p>
-                <p>✓ Launchpad missions</p>
-                <p>✓ Practice exercises</p>
-                <p>✓ Free Write entries</p>
+                <p>{_isThai ? '✓ คำตอบและคุณค่าจาก Mirror' : '✓ Mirror answers & values'}</p>
+                <p>{_isThai ? '✓ บันทึก Reflection' : '✓ Reflection entries'}</p>
+                <p>{_isThai ? '✓ ภารกิจ Launchpad' : '✓ Launchpad missions'}</p>
+                <p>{_isThai ? '✓ แบบฝึกหัด Practice' : '✓ Practice exercises'}</p>
+                <p>{_isThai ? '✓ บันทึก Free Write' : '✓ Free Write entries'}</p>
               </div>
-              <div className="flex justify-center mt-6">
-                <PillButton onClick={() => setSent(true)}>{sent ? 'Sent ✓' : 'Send to my email'}</PillButton>
+              <p className="text-g-charcoal text-[14px] leading-relaxed mt-6 mb-4">
+                {_isThai
+                  ? 'ระหว่างที่เรากำลังทำระบบดาวน์โหลดอัตโนมัติ ส่งอีเมลมาเพื่อขอข้อมูลของคุณได้ — เราจะส่งข้อมูลกลับให้ภายใน 7 วัน'
+                  : 'While we finish the automatic download feature, email us to request your data export — we will send your data back within 7 days.'}
+              </p>
+              <div className="flex justify-center">
+                <PillButton onClick={handleMailto}>
+                  {_isThai ? 'ส่งอีเมลขอข้อมูล' : 'Email to request export'}
+                </PillButton>
               </div>
-              <p className="text-center text-g-charcoal text-sm mt-5">Format: PDF (readable) + JSON (raw)</p>
-              <p className="text-center text-g-charcoal text-sm mt-1">Delivered to:</p>
-              <p className="text-center text-g-charcoal text-sm font-bold">{email}</p>
+              <p className="text-center text-[11px] text-g-gray mt-4">
+                {_isThai
+                  ? 'หรือส่งเองมาที่ parnparnmada@gmail.com'
+                  : 'Or email us directly at parnparnmada@gmail.com'}
+              </p>
             </div>
           </div>
         </div>
@@ -5264,72 +5517,196 @@
     // ============================================================
     // PRIVACY POLICY (Settings → Privacy policy)
     // ============================================================
-    const PrivacyScreen = ({ onBack, onHome }) => (
-      <div className="phone-frame fade-in">
-        <div className="px-6 pt-6 pb-2 flex items-center justify-between">
-          <BackArrow onClick={onBack} />
-          <h3 className="font-serif text-[22px] text-g-charcoal">Privacy</h3>
-          <button onClick={onHome} className="text-g-charcoal text-base">Done</button>
-        </div>
-        <div className="flex-1 overflow-y-auto no-scrollbar px-6 pt-3">
-          <div className="card-outline p-5">
-            <p className="text-g-charcoal text-[15px]">Your entries stay private.</p>
-            <p className="text-g-charcoal text-[15px]">Only you can see them.</p>
-            <div className="border-t border-g-line my-4"></div>
-            <p className="font-bold text-g-charcoal text-[14px] tracking-wide mb-2">THE SHORT VERSION</p>
-            <ul className="text-g-charcoal text-[14px] space-y-1.5">
-              <li>• We don't sell your data. Ever.</li>
-              <li>• We don't read your reflections.</li>
-              <li>• Your data lives in [region] servers.</li>
-              <li>• You can delete everything anytime.</li>
-            </ul>
-            <div className="flex justify-center mt-6">
-              <PillButton onClick={() => {}}>Read the full policy</PillButton>
+    const PrivacyScreen = ({ onBack, onHome, lang }) => {
+      // V57 — Items 3 + 4. Wire "Read the full policy" → real URL; fill the
+      // "[region] servers" placeholder with the actual Firebase region.
+      const _isThai = lang === 'th';
+      const _privacyUrl = _isThai ? PRIVACY_URL_TH : PRIVACY_URL_EN;
+      return (
+        <div className="phone-frame fade-in">
+          <div className="px-6 pt-6 pb-2 flex items-center justify-between">
+            <BackArrow onClick={onBack} />
+            <h3 className="font-serif text-[22px] text-g-charcoal">{_isThai ? 'ความเป็นส่วนตัว' : 'Privacy'}</h3>
+            <button onClick={onHome} className="text-g-charcoal text-base">{_isThai ? 'เสร็จสิ้น' : 'Done'}</button>
+          </div>
+          <div className="flex-1 overflow-y-auto no-scrollbar px-6 pt-3">
+            <div className="card-outline p-5">
+              <p className="text-g-charcoal text-[15px]">{_isThai ? 'บันทึกของคุณเป็นส่วนตัว' : 'Your entries stay private.'}</p>
+              <p className="text-g-charcoal text-[15px]">{_isThai ? 'คุณคนเดียวที่เห็นได้' : 'Only you can see them.'}</p>
+              <div className="border-t border-g-line my-4"></div>
+              <p className="font-bold text-g-charcoal text-[14px] tracking-wide mb-2">{_isThai ? 'ฉบับย่อ' : 'THE SHORT VERSION'}</p>
+              <ul className="text-g-charcoal text-[14px] space-y-1.5">
+                <li>{_isThai ? '• เราไม่ขายข้อมูลของคุณ ไม่ว่ากรณีใด' : "• We don't sell your data. Ever."}</li>
+                <li>{_isThai ? '• เราไม่อ่านบทบันทึกของคุณ' : "• We don't read your reflections."}</li>
+                {/* V57 — Item 4. Placeholder filled per BE audit: Firestore is
+                    asia-southeast1 (Singapore). PDPA-friendly (Asia region).
+                    V57.1 (Parn 27 May 2026): corrected Tokyo → Singapore — both
+                    privacy policy live + region copy now consistent. */}
+                <li>{_isThai
+                  ? '• ข้อมูลของคุณเก็บไว้ในเซิร์ฟเวอร์ที่สิงคโปร์ (Google Cloud asia-southeast1)'
+                  : '• Your data lives in Singapore (Google Cloud asia-southeast1).'}</li>
+                <li>{_isThai ? '• คุณลบข้อมูลทั้งหมดเมื่อไหร่ก็ได้' : '• You can delete everything anytime.'}</li>
+              </ul>
+              <div className="flex justify-center mt-6">
+                {/* V57 — Item 3. Wire to real hosted policy (no more dead button). */}
+                <PillButton onClick={() => {
+                  try {
+                    window.open(_privacyUrl, '_blank', 'noopener,noreferrer');
+                  } catch (e) {
+                    /* defensive — popup blocked or window unavailable */
+                    window.location.href = _privacyUrl;
+                  }
+                }}>
+                  {_isThai ? 'อ่านนโยบายฉบับเต็ม' : 'Read the full policy'}
+                </PillButton>
+              </div>
+              <p className="text-g-charcoal text-[14px] mt-5">{_isThai ? 'อัปเดตล่าสุด: พฤษภาคม 2569' : 'Last updated: May 2026'}</p>
             </div>
-            <p className="text-g-charcoal text-[14px] mt-5">Last updated: May 2026</p>
           </div>
         </div>
-      </div>
-    );
+      );
+    };
+
+    // ============================================================
+    // V57.1 — Item 13. CRISIS RESOURCES (full hotline list)
+    // ============================================================
+    // Dedicated screen for the 4 Thai mental-health + medical hotlines plus
+    // the international fallback. Tap-to-call via `tel:` href. Linked from
+    // Settings, from GroundMe Hard, and from Support → Crisis card. Per L7
+    // verification log all 4 numbers were web-confirmed before V57.1 ship.
+    const CrisisResourcesScreen = ({ onBack, onHome, lang }) => {
+      const _isThai = lang === 'th';
+      return (
+        <div className="phone-frame fade-in">
+          <div className="px-6 pt-6 pb-2 flex items-center justify-between">
+            <BackArrow onClick={onBack} />
+            <h3 className="font-serif text-[20px] text-g-charcoal">{_isThai ? 'สายด่วนช่วยเหลือ' : 'Crisis Resources'}</h3>
+            <button onClick={onHome} className="text-g-charcoal text-base">{_isThai ? 'เสร็จสิ้น' : 'Done'}</button>
+          </div>
+          <div className="flex-1 overflow-y-auto no-scrollbar px-6 pt-3 pb-6">
+            <div className="card-outline p-5 mb-3">
+              <p className="text-g-charcoal text-sm leading-relaxed">
+                {_isThai
+                  ? 'ถ้าคุณกำลังต้องการคนคุยด้วยทันที โทรหรือแตะหมายเลขด้านล่าง — มีคนพร้อมรับฟังเสมอ'
+                  : "If you need someone to talk to right now, call or tap a number below — someone is ready to listen."}
+              </p>
+            </div>
+
+            <div className="card-outline p-0 overflow-hidden">
+              {CRISIS_HOTLINES.map((h, i) => (
+                <a
+                  key={h.dial}
+                  href={'tel:' + h.dial}
+                  className={'flex items-center justify-between px-5 py-4 ' + (i < CRISIS_HOTLINES.length - 1 ? 'border-b border-g-line' : '')}
+                  aria-label={(_isThai ? h.nameTh : h.nameEn) + ' ' + h.number}
+                >
+                  <div className="flex-1 pr-3">
+                    <p className="text-g-charcoal text-[14px] leading-snug">{_isThai ? h.nameTh : h.nameEn}</p>
+                    <p className="text-g-gray text-[12px] mt-0.5">{_isThai ? h.hoursTh : h.hoursEn}</p>
+                  </div>
+                  <span className="text-g-green text-[16px] font-bold tracking-wide">{h.number}</span>
+                </a>
+              ))}
+            </div>
+
+            <div className="card-outline p-5 mt-3">
+              <h4 className="font-bold text-g-charcoal text-[14px] mb-2">{_isThai ? '🌐 นอกประเทศไทย' : '🌐 Outside Thailand'}</h4>
+              <div className="border-t border-g-line pt-3">
+                <p className="text-g-charcoal text-sm leading-relaxed">
+                  {_isThai
+                    ? 'ค้นหาสายด่วนในประเทศของคุณที่:'
+                    : 'Find a helpline in your country at:'}
+                </p>
+                <a
+                  href="https://findahelpline.com"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-g-deep font-semibold text-sm underline mt-1 inline-block"
+                >
+                  findahelpline.com
+                </a>
+              </div>
+            </div>
+
+            <p className="text-g-gray text-[12px] italic text-center mt-5 px-2 leading-relaxed">
+              {_isThai
+                ? 'MindoDay เป็นพื้นที่สำหรับการกลับมารู้จักตัวเอง ไม่ใช่ทดแทนการดูแลจากผู้เชี่ยวชาญ'
+                : 'MindoDay is a space for self-reflection, not a substitute for professional care.'}
+            </p>
+          </div>
+        </div>
+      );
+    };
 
     // ============================================================
     // 18. SUPPORT & RESOURCES
     // ============================================================
-    const SupportScreen = ({ onBack }) => (
+    const SupportScreen = ({ onBack, onCrisisResources, lang }) => {
+      const _isThai = lang === 'th';
+      return (
       <div className="phone-frame fade-in">
         <div className="px-6 pt-6 pb-2"><BackArrow onClick={onBack} /></div>
         <div className="flex-1 overflow-y-auto no-scrollbar px-6">
-          <h2 className="font-serif text-[24px] text-g-charcoal text-center">Support &amp; Resources</h2>
+          <h2 className="font-serif text-[24px] text-g-charcoal text-center">{_isThai ? 'ความช่วยเหลือและทรัพยากร' : 'Support & Resources'}</h2>
           <div className="space-y-3 mt-5 pb-6">
             <div className="card-outline p-5">
-              <h4 className="font-bold text-g-charcoal text-[14px] mb-2">📞 CRISIS SUPPORT</h4>
+              <h4 className="font-bold text-g-charcoal text-[14px] mb-2">{_isThai ? '📞 ความช่วยเหลือฉุกเฉิน' : '📞 CRISIS SUPPORT'}</h4>
               <div className="border-t border-g-line pt-3">
-                <p className="text-g-charcoal text-sm leading-relaxed">If you're in crisis or need<br/>immediate help:</p>
-                <ul className="mt-3 text-g-charcoal text-sm leading-relaxed list-disc pl-5">
-                  <li>Thailand: <span className="font-semibold">1323</span></li>
-                  <li>International: <span className="font-semibold">findahelpline.com</span></li>
+                <p className="text-g-charcoal text-sm leading-relaxed">
+                  {_isThai ? 'ถ้าคุณกำลังต้องการความช่วยเหลือทันที:' : "If you're in crisis or need immediate help:"}
+                </p>
+                {/* V57.1 — Item 13: surface the 4 Thai hotlines inline (top 2)
+                    + link to the full Crisis Resources screen for the rest. */}
+                <ul className="mt-3 text-g-charcoal text-sm leading-relaxed space-y-1.5">
+                  {CRISIS_HOTLINES.slice(0, 2).map(h => (
+                    <li key={h.dial} className="flex items-baseline gap-2">
+                      <span className="flex-1">{_isThai ? h.nameTh : h.nameEn}:</span>
+                      <a href={'tel:' + h.dial} className="font-semibold text-g-deep underline">{h.number}</a>
+                    </li>
+                  ))}
                 </ul>
+                {typeof onCrisisResources === 'function' && (
+                  <button
+                    onClick={onCrisisResources}
+                    className="mt-3 text-g-deep text-sm underline font-semibold"
+                  >
+                    {_isThai ? 'ดูสายด่วนทั้งหมด →' : 'See all crisis hotlines →'}
+                  </button>
+                )}
               </div>
             </div>
             <div className="card-outline p-5">
-              <h4 className="font-bold text-g-charcoal text-[14px] mb-2">💬 CONTACT US</h4>
+              <h4 className="font-bold text-g-charcoal text-[14px] mb-2">{_isThai ? '💬 ติดต่อเรา' : '💬 CONTACT US'}</h4>
               <div className="border-t border-g-line pt-3">
-                <p className="text-g-charcoal text-sm leading-relaxed">Questions or feedback?</p>
+                <p className="text-g-charcoal text-sm leading-relaxed">{_isThai ? 'มีคำถามหรือข้อเสนอแนะ?' : 'Questions or feedback?'}</p>
                 <p className="text-g-charcoal text-sm leading-relaxed underline">hello@mindoday.com</p>
               </div>
             </div>
             <div className="card-outline p-5">
-              <h4 className="font-bold text-g-charcoal text-[14px] mb-2">ℹ️ ABOUT MINDODAY</h4>
+              <h4 className="font-bold text-g-charcoal text-[14px] mb-2">{_isThai ? 'ℹ️ เกี่ยวกับ MINDODAY' : 'ℹ️ ABOUT MINDODAY'}</h4>
               <div className="border-t border-g-line pt-3 space-y-3">
-                <p className="text-g-charcoal text-sm leading-relaxed">MindoDay is a self-reflection tool, not a replacement for professional mental health support.</p>
-                <p className="text-g-charcoal text-sm leading-relaxed">If you're struggling, please reach out to a licensed therapist or counselor.</p>
-                <p className="text-g-charcoal text-sm leading-relaxed">We're here to help you remember who you are — not to treat or diagnose.</p>
+                <p className="text-g-charcoal text-sm leading-relaxed">
+                  {_isThai
+                    ? 'MindoDay เป็นพื้นที่สำหรับการกลับมารู้จักตัวเอง ไม่ใช่ทดแทนการดูแลด้านสุขภาพจิตจากผู้เชี่ยวชาญ'
+                    : 'MindoDay is a self-reflection tool, not a replacement for professional mental health support.'}
+                </p>
+                <p className="text-g-charcoal text-sm leading-relaxed">
+                  {_isThai
+                    ? 'ถ้าคุณกำลังเหนื่อยเกินไป กรุณาติดต่อนักบำบัดหรือนักให้คำปรึกษาที่มีใบประกอบวิชาชีพ'
+                    : "If you're struggling, please reach out to a licensed therapist or counselor."}
+                </p>
+                <p className="text-g-charcoal text-sm leading-relaxed">
+                  {_isThai
+                    ? 'เราอยู่ที่นี่เพื่อช่วยให้คุณกลับมารู้จักตัวเอง ไม่ใช่เพื่อรักษาหรือวินิจฉัย'
+                    : "We're here to help you remember who you are — not to treat or diagnose."}
+                </p>
               </div>
             </div>
           </div>
         </div>
       </div>
-    );
+      );
+    };
 
     // ============================================================
     // V15 BOOT SPLASH — shown while we wait for firebase.js (max 2.5s)
@@ -5467,7 +5844,9 @@
     // (one-per-device, localStorage tracked). "Begin my 7 days" routes to
     // signup (anon) — Backend's ensureUserDocAndMigrate auto-starts trial.
     // ============================================================
-    const TrialWelcomeScreen = ({ onContinue, onHaveCode, onLater, onSignIn }) => (
+    const TrialWelcomeScreen = ({ onContinue, onHaveCode, onLater, onSignIn, lang }) => {
+      const _isThai = lang === 'th';
+      return (
       <div className="phone-frame fade-in" style={{ backgroundColor: '#F0F7F4' }}>
         {/* Brand anchor — wordmark + tagline centered top */}
         <div className="pt-12 px-8 text-center">
@@ -5496,10 +5875,12 @@
             letterSpacing: '0.005em',
             lineHeight: 1.15,
           }}>
-            Your Mirror is built.
+            {_isThai ? 'Mirror ของคุณพร้อมแล้ว' : 'Your Mirror is built.'}
           </h2>
           <p className="mt-3 text-g-charcoal text-[17px] leading-relaxed" style={{ maxWidth: '320px' }}>
-            The next 7 days are yours, on us. <br/>Take five minutes a day to feel grounded.
+            {_isThai
+              ? <React.Fragment>7 วันข้างหน้านี้เป็นของคุณ ฟรี <br/>ใช้เวลาวันละ 5 นาที เพื่อรู้สึกมั่นคงกับตัวเอง</React.Fragment>
+              : <React.Fragment>The next 7 days are yours, on us. <br/>Take five minutes a day to feel grounded.</React.Fragment>}
           </p>
           {/* V54 — Copy honesty fix. Flow A2 = Stripe trial w/ card required,
               so the previous "No card needed" line misled users. New copy
@@ -5507,13 +5888,19 @@
               and explicitly cites cancel-anytime — matches Stripe Checkout
               promise on day 8 of trial. Day-8 date computed from "now + 7d"
               so it stays accurate regardless of when the user lands here
-              (returning lapsed users could see a stale baked-in date). */}
+              (returning lapsed users could see a stale baked-in date).
+              V57.1 — bilingual: TH months when _isThai, EN abbreviations otherwise. */}
           <p className="mt-3 text-[14px] italic leading-relaxed" style={{ color: '#888888', maxWidth: '320px' }}>
             {(() => {
               const day8 = new Date();
               day8.setDate(day8.getDate() + 8);
-              const MONTHS_SHORT_LOCAL = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-              const day8Label = `${day8.getDate()} ${MONTHS_SHORT_LOCAL[day8.getMonth()]}`;
+              const MONTHS_SHORT_EN = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+              const MONTHS_SHORT_TH = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
+              if (_isThai) {
+                const day8Label = `${day8.getDate()} ${MONTHS_SHORT_TH[day8.getMonth()]}`;
+                return `กรอกบัตรเพื่อเริ่ม 7 วันของคุณ ยกเลิกเมื่อไหร่ก็ได้ — ไม่มีค่าใช้จ่ายก่อนวันที่ ${day8Label}`;
+              }
+              const day8Label = `${day8.getDate()} ${MONTHS_SHORT_EN[day8.getMonth()]}`;
               return `Add card to start your 7 days. Cancel anytime — no charge before ${day8Label}.`;
             })()}
           </p>
@@ -5522,26 +5909,29 @@
             onClick={onContinue}
             className="mt-9 w-full max-w-[300px] px-6 py-3.5 rounded-full bg-g-green text-white text-[15px] font-semibold transition-all active:scale-[0.98] active:bg-g-deep"
           >
-            Begin my 7 days
+            {_isThai ? 'เริ่ม 7 วันของฉัน' : 'Begin my 7 days'}
           </button>
 
           <button onClick={onHaveCode} className="mt-12 text-g-deep text-sm underline font-semibold">
-            Have a code?
+            {_isThai ? 'มีโค้ดส่วนลด?' : 'Have a code?'}
           </button>
           <button onClick={onLater} className="mt-2.5 text-g-gray text-sm underline">
-            Maybe later
+            {_isThai ? 'ไว้ทีหลัง' : 'Maybe later'}
           </button>
         </div>
 
         {/* Footer — return path */}
         <div className="px-6 pb-6 text-center">
           <p className="text-sm text-g-gray">
-            Already a member?{' '}
-            <button onClick={onSignIn} className="text-g-deep font-semibold underline">Sign in</button>
+            {_isThai ? 'เป็นสมาชิกอยู่แล้ว? ' : 'Already a member? '}
+            <button onClick={onSignIn} className="text-g-deep font-semibold underline">
+              {_isThai ? 'เข้าสู่ระบบ' : 'Sign in'}
+            </button>
           </p>
         </div>
       </div>
-    );
+      );
+    };
 
     // ============================================================
     // V30/Phase2 — TAKE YOUR TIME (Maybe-later warning gate)
@@ -5975,25 +6365,111 @@
     };
 
     // ============================================================
-    // V25/Phase2 — PAYWALL SCREEN (stub)
-    // Triggered when canAccessApp() returns false (signed-in + lapsed/canceled).
-    // Real screen content lands later (V25.x with Stripe + brand assets).
+    // V25/Phase2 — PAYWALL SCREEN
+    // Triggered as a defensive fallback when canAccessApp() returns false
+    // (signed-in + lapsed/canceled). The V55 architectural fix routes most
+    // such users to SubscriptionSettingsScreen (LAPSED branch) directly.
+    // PaywallScreen is the catch-all for unknown / unexpected states.
+    //
+    // V57 Item 12 — rebuilt from stub. Now wires Resubscribe → Stripe
+    // Customer Portal (same handler shape as SubscriptionSettingsScreen.
+    // handlePortal) + Sign-out fallback for users who don't want to
+    // resubscribe + inline error banner on portal-open failure. Bilingual.
     // Soft Sage #F0F7F4 phone-frame override (moment screen).
     // ============================================================
-    const PaywallScreen = () => (
-      <div className="phone-frame fade-in" style={{ backgroundColor: '#F0F7F4' }}>
-        <div className="flex-1 flex items-center justify-center text-center px-8">
-          <div>
-            <h2 className="font-serif text-[26px] text-g-deep mb-3" style={{ maxWidth: '320px' }}>
-              Your time with MindoDay — let's continue
-            </h2>
-            <p className="text-g-charcoal text-sm leading-relaxed" style={{ maxWidth: '280px' }}>
-              Becoming more at home in who you are takes time.
-            </p>
+    const PaywallScreen = ({ subState, sync, lang, onSignOut }) => {
+      const [pending, setPending] = useState(false);
+      const [error, setError] = useState(null);
+      const _isThai = lang === 'th';
+
+      const handleResubscribe = async () => {
+        if (pending) return;
+        setPending(true);
+        setError(null);
+        try {
+          if (!sync || typeof sync.openCustomerPortal !== 'function') {
+            setError(_isThai
+              ? 'ตอนนี้ยังเปิดหน้าจัดการสมาชิกไม่ได้ ลองอีกครั้งหรือส่งอีเมลมาที่ hello@mindoday.com'
+              : "Couldn't open subscription portal. Try again or email hello@mindoday.com.");
+            setPending(false);
+            return;
+          }
+          const returnUrl = window.location.origin + (window.location.pathname || '/') + '?portal=return';
+          const result = await sync.openCustomerPortal({ returnUrl });
+          if (result && result.ok && result.url) {
+            window.location.href = result.url;
+            /* leave pending=true through redirect */
+          } else {
+            console.warn('[V57] PaywallScreen openCustomerPortal returned no url:', result);
+            setError(_isThai
+              ? 'เปิดหน้าจัดการสมาชิกไม่ได้ ลองอีกครั้งนะคะ'
+              : "Couldn't open subscription portal. Try again.");
+            setPending(false);
+          }
+        } catch (e) {
+          console.warn('[V57] PaywallScreen openCustomerPortal threw:', e);
+          setError(_isThai
+            ? 'มีบางอย่างผิดพลาด ลองอีกครั้งนะคะ'
+            : 'Something went wrong. Please try again.');
+          setPending(false);
+        }
+      };
+
+      const handleSignOutFallback = async () => {
+        if (typeof onSignOut === 'function') {
+          await onSignOut();
+        }
+      };
+
+      return (
+        <div className="phone-frame fade-in" style={{ backgroundColor: '#F0F7F4' }}>
+          <div className="flex-1 flex flex-col items-center justify-center text-center px-8 space-y-6">
+            <div>
+              <h2 className="font-serif text-[26px] text-g-deep mb-3" style={{ maxWidth: '320px' }}>
+                {_isThai ? 'พักสักครู่ — มาต่อกันเถอะ' : "Your time with MindoDay — let's continue"}
+              </h2>
+              <p className="text-g-charcoal text-sm leading-relaxed" style={{ maxWidth: '280px' }}>
+                {_isThai
+                  ? 'การกลับมารู้จักตัวเองใช้เวลา — เรารออยู่ที่นี่'
+                  : 'Becoming more at home in who you are takes time.'}
+              </p>
+            </div>
+
+            <button
+              onClick={handleResubscribe}
+              disabled={pending}
+              className="px-8 py-3 rounded-full bg-g-green text-white text-[15px] font-semibold transition-all active:scale-[0.98] active:bg-g-deep disabled:opacity-50 disabled:active:scale-100 flex items-center gap-2.5"
+            >
+              {pending && (
+                <svg className="animate-spin" width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <circle cx="12" cy="12" r="10" stroke="rgba(255,255,255,0.35)" strokeWidth="3" />
+                  <path d="M12 2 a10 10 0 0 1 10 10" stroke="#FFFFFF" strokeWidth="3" strokeLinecap="round" />
+                </svg>
+              )}
+              <span>{_isThai ? 'สมัครต่ออายุ' : 'Resubscribe'}</span>
+            </button>
+
+            {error && (
+              <div role="alert" className="px-4 py-3 rounded-2xl text-[13px] leading-snug max-w-[280px]"
+                   style={{ backgroundColor: '#FFF8F0', color: '#C97C7C' }}>
+                {error}
+              </div>
+            )}
+
+            {/* Sign-out escape — same intent as V55/V56 LAPSED branch.
+                Guarantees blocked users always have a path out (PDPA + EU
+                right-to-easy-cancellation). */}
+            <button
+              type="button"
+              onClick={handleSignOutFallback}
+              className="text-g-gray text-[13px] underline"
+            >
+              {_isThai ? 'ออกจากระบบ' : 'Sign out'}
+            </button>
           </div>
         </div>
-      </div>
-    );
+      );
+    };
 
     // ============================================================
     // V51 / Pattern 3B — VERIFY EMAIL SCREEN
@@ -6359,6 +6835,17 @@
           if (unsubData) unsubData();
         };
       }, []);
+
+      // V57.1 — Mirror data.lang to window.MINDODAY_LANG on every data change.
+      // BottomNav reads this without a prop drill (it's rendered inside many
+      // screens; threading lang through every parent would be ~12 sites with
+      // same change). Other components that already accept `lang` keep the
+      // explicit prop pattern. Default 'en' until first paint resolves.
+      useEffect(() => {
+        if (typeof window !== 'undefined') {
+          window.MINDODAY_LANG = (data && data.lang) || 'en';
+        }
+      }, [data && data.lang]);
 
       // ── SAVE — routes through groundedSync if available, else V14 localStorage ──
       useEffect(() => {
@@ -7220,6 +7707,7 @@
             onSignUpEmail={() => go('signup')}
             onSignIn={() => go('signin')}
             onContinueAnon={() => go('resonance')}
+            lang={(data && data.lang) || 'en'}
           />; break;
         case 'resonance':
           // PATTERN A (single-entry) — if multi-entry added later (e.g.,
@@ -7266,6 +7754,7 @@
           // SignIn↔SignUp toggle context.
           view = <SignUpScreen
             groundedAuth={groundedApi && groundedApi.groundedAuth}
+            lang={(data && data.lang) || 'en'}
             onSubmitted={(submittedEmail) => {
               // V51/Pattern 3B: route to verify_email screen post-requestSignup.
               // No Firebase user exists yet — capture the email straight from
@@ -7494,6 +7983,7 @@
               try { localStorage.setItem('grounded_from_trial_welcome', '1'); } catch (e) {}
               go('signin');
             }}
+            lang={(data && data.lang) || 'en'}
           />; break;
         case 'take_your_time':
           // V30/Phase2: Maybe-later warning gate between TW and WellBeHere.
@@ -7663,7 +8153,21 @@
           // V38: paywall route preserved as defensive fallback. Gate now redirects
           // to tier_pick/subscription based on subState.status; this case fires only
           // for unknown/edge states.
-          view = <PaywallScreen />; break;
+          // V57 Item 12: PaywallScreen now accepts subState/sync/lang/onSignOut so
+          // it can wire its own Resubscribe (→ Stripe Portal) + Sign-out escape.
+          view = <PaywallScreen
+            subState={subState}
+            sync={groundedApi && groundedApi.groundedSync}
+            lang={(data && data.lang) || 'en'}
+            onSignOut={async () => {
+              if (!groundedApi || !groundedApi.groundedAuth) return;
+              try {
+                await groundedApi.groundedAuth.signOut();
+              } catch (e) {
+                console.warn('[V57] PaywallScreen sign-out failed:', e);
+              }
+            }}
+          />; break;
         case 'reflection':
           // V16/Bug10: two callbacks — onSaveDraft (resumable) + onSubmit (locked + go home).
           view = <ReflectionScreen data={data}
@@ -7709,7 +8213,17 @@
           view = <GroundMeHard data={data}
             onMoment={() => { setGroundMeFrom('gm_hard'); go('gm_moment'); }}
             onRemember={() => { recordGroundMe('hard', 'i_remember'); go('home'); }}
-            onHome={() => go('home')} />; break;
+            onHome={() => go('home')}
+            onCrisisResources={() => go('crisis_resources')} />; break;
+        case 'crisis_resources':
+          // V57.1 — Item 13. Reachable from GroundMe Hard "Full crisis-resources
+          // screen →" link, from Settings → Crisis Resources, and from Support →
+          // CRISIS SUPPORT "See all crisis hotlines →".
+          view = <CrisisResourcesScreen
+            onBack={goBack}
+            onHome={() => go('home')}
+            lang={(data && data.lang) || 'en'}
+          />; break;
         case 'gm_moment':
           view = <TakeMoment onReturn={() => {
             const tri = triageOf(groundMeFrom);
@@ -7809,6 +8323,7 @@
           view = <SettingsScreen
             onHome={() => go('home')}
             onNav={navTo}
+            lang={(data && data.lang) || 'en'}
             // V38: rewired to new 'subscription' route — same DRY destination
             // as Account "Manage →" and Day-7 forced gate.
             onPremium={() => go('subscription')}
@@ -7818,6 +8333,7 @@
             onLanguage={() => go('language')}
             onExport={() => go('export_data')}
             onPrivacy={() => go('privacy')}
+            onCrisisResources={() => go('crisis_resources')}
             onLogout={async () => {
               // V15/E8: async sign-out. The auth listener (A3) catches the
               // sign-out event and the resolver (J1) routes back to welcome.
@@ -7845,7 +8361,11 @@
         // case above (line 5828) and an explicit 'premium' alias (line 5837)
         // for backward-compat. PremiumScreen component deleted with V38.
         case 'support':
-          view = <SupportScreen onBack={() => go('settings')} />; break;
+          view = <SupportScreen
+            onBack={() => go('settings')}
+            onCrisisResources={() => go('crisis_resources')}
+            lang={(data && data.lang) || 'en'}
+          />; break;
         case 'account':
           // V15/Bug4: AccountScreen reads form values from accountDraft instead
           // of data. enterAccount() initializes the draft before this case fires.
@@ -7934,9 +8454,9 @@
             onBack={() => go('settings')}
             onSave={(lang) => { updateData({ lang }); go('settings'); }} />; break;
         case 'export_data':
-          view = <ExportDataScreen data={data} onBack={() => go('settings')} onHome={() => go('settings')} />; break;
+          view = <ExportDataScreen data={data} onBack={() => go('settings')} onHome={() => go('settings')} lang={(data && data.lang) || 'en'} />; break;
         case 'privacy':
-          view = <PrivacyScreen onBack={() => go('settings')} onHome={() => go('settings')} />; break;
+          view = <PrivacyScreen onBack={() => go('settings')} onHome={() => go('settings')} lang={(data && data.lang) || 'en'} />; break;
 
         default:
           view = <WelcomeScreen
@@ -7959,6 +8479,7 @@
             onSignUpEmail={() => go('signup')}
             onSignIn={() => go('signin')}
             onContinueAnon={() => go('resonance')}
+            lang={(data && data.lang) || 'en'}
           />;
       }
 
