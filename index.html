@@ -345,6 +345,12 @@
     // TH is the default surface (Thai-first product); EN gets the `-en` suffix.
     // Used by: SignUpScreen passive disclaimer + explicit consent checkboxes,
     // PrivacyScreen "Read the full policy" button.
+    // V57.1.3 — Policy version constant for consent audit trail.
+    // Bump this whenever Privacy Policy OR Terms is updated. On next user login
+    // after a bump, app should re-prompt for fresh consent (V58 work — see Q3).
+    // Stored on every signup-time consent record in users/{uid}/data/consent.
+    const POLICY_VERSION = '2026-05-31-v1';
+
     const PRIVACY_URL_TH = 'https://mindoday.com/privacy';
     const TERMS_URL_TH   = 'https://mindoday.com/terms';
     const PRIVACY_URL_EN = 'https://mindoday.com/privacy-en';
@@ -988,7 +994,7 @@
     // V15/B2: Google button shows inline sage spinner while in-flight, and a
     // soft cream/muted-red error banner appears above the secondary stack on
     // failure. User-cancelled popups are silent (mapAuthError returns null).
-    const WelcomeScreen = ({ hasGoogleAuth, onGoogle, onSignUpEmail, onSignIn, onContinueAnon, lang }) => {
+    const WelcomeScreen = ({ hasGoogleAuth, onGoogle, onSignUpEmail, onSignIn, onContinueAnon, lang, onChangeLang }) => {
       const [pending, setPending] = useState(null);   // null | 'google'
       const [error, setError]     = useState(null);   // warm string | null
       const _isThai = lang === 'th';
@@ -1014,7 +1020,30 @@
       };
 
       return (
-        <div className="phone-frame fade-in">
+        <div className="phone-frame fade-in relative">
+          {/* V57.1.3 — Language toggle at top-right for pre-signup users.
+              Active language is bold + colored; inactive is muted. */}
+          {onChangeLang && (
+            <div className="absolute top-4 right-5 flex items-center gap-2 text-[12px] z-10">
+              <button
+                type="button"
+                onClick={() => onChangeLang('en')}
+                className={'transition-colors ' + (lang === 'en' ? 'text-g-deep font-semibold' : 'text-g-gray hover:text-g-charcoal')}
+                aria-label="English"
+              >
+                EN
+              </button>
+              <span className="text-g-gray">|</span>
+              <button
+                type="button"
+                onClick={() => onChangeLang('th')}
+                className={'transition-colors ' + (lang === 'th' ? 'text-g-deep font-semibold' : 'text-g-gray hover:text-g-charcoal')}
+                aria-label="ภาษาไทย"
+              >
+                ไทย
+              </button>
+            </div>
+          )}
           <div className="flex-1 flex flex-col items-center justify-center text-center px-8">
             <Logo size="xl" />
             <p className="mt-3 text-g-charcoal text-base px-2 leading-snug">
@@ -1360,6 +1389,18 @@
           // the user clicks the verification link → completeSignup fires →
           // onAuthChange → hydration sees user.emailVerified === true.
           try { localStorage.setItem('grounded_show_trial_welcome', '1'); } catch (e) {}
+          // V57.1.3 — Consent audit trail. Records what user agreed to + which
+          // policy version + when. Picked up post-auth and synced to
+          // users/{uid}/data/consent via groundedSync.save (legal audit trail).
+          try {
+            localStorage.setItem('grounded_pending_consent', JSON.stringify({
+              agreedAge:     { value: true, version: '16+',           at: new Date().toISOString() },
+              agreedTos:     { value: true, version: POLICY_VERSION,  at: new Date().toISOString() },
+              agreedPrivacy: { value: true, version: POLICY_VERSION,  at: new Date().toISOString() },
+              method:        'email',
+              userAgent:     (navigator.userAgent || '').slice(0, 200),
+            }));
+          } catch (e) { /* private mode etc — skip */ }
           // V51: hand the typed email up to the App router so it can populate
           // verifyEmailContext directly (no currentUser to read from yet).
           if (onSubmitted) onSubmitted(trimmedEmail);
@@ -1542,7 +1583,8 @@
                 checkboxes gate formValid so Create-account stays disabled
                 until ticked. Sage accent matches brand. Links open in new
                 tab + noopener noreferrer for security. Bilingual via lang. */}
-            <div className="mt-5 space-y-3 px-2">
+            {/* V57.1.3: removed px-2 to flush-align checkboxes with form fields */}
+            <div className="mt-5 space-y-3">
               <label className="flex items-start gap-3 text-[13px] text-g-charcoal cursor-pointer">
                 <input
                   type="checkbox"
@@ -6853,6 +6895,29 @@
         }
       }, [data, bootState, groundedApi]);
 
+      // ── V57.1.3 — Pending consent sync (legal audit trail) ────────────
+      // After signup, SignUpScreen wrote consent to localStorage (since user
+      // wasn't auth'd yet). Once auth completes + data is hydrated, we move
+      // that record into data.consent so groundedSync.save persists it to
+      // Firestore (users/{uid}/data/consent). PDPA + GDPR audit trail.
+      useEffect(() => {
+        if (bootState !== 'ready') return;
+        if (!groundedApi || !groundedApi.groundedSync) return;
+        let pending;
+        try {
+          const raw = localStorage.getItem('grounded_pending_consent');
+          if (!raw) return;
+          pending = JSON.parse(raw);
+        } catch (e) { return; }
+        if (!pending) return;
+        // Merge — preserve any prior consent records (e.g. earlier signups
+        // on shared device), index by signup timestamp.
+        const key = (pending.agreedTos && pending.agreedTos.at) || new Date().toISOString();
+        const priorConsent = (data && data.consent) || {};
+        updateData({ consent: { ...priorConsent, [key]: pending } });
+        try { localStorage.removeItem('grounded_pending_consent'); } catch (e) {}
+      }, [bootState, groundedApi, data && data.consent]);
+
       // ── AUTH LISTENER (A3 + J1) ────────────────────────────────────
       // Detects sign-in / sign-out events and routes accordingly via the
       // resolveInitialScreen helper. Data hydration is handled by
@@ -7688,6 +7753,18 @@
               // signInWithGoogle resolves synchronously via popup, the flag is
               // present when the auth listener fires.
               try { localStorage.setItem('grounded_show_trial_welcome', '1'); } catch (e) {}
+              // V57.1.3 — Consent audit trail for Google signup path.
+              // Welcome screen shows Terms/Privacy disclaimer below; clicking
+              // Continue with Google = implicit consent to current versions.
+              try {
+                localStorage.setItem('grounded_pending_consent', JSON.stringify({
+                  agreedAge:     { value: true, version: '16+',          at: new Date().toISOString(), note: 'implicit via Welcome disclaimer' },
+                  agreedTos:     { value: true, version: POLICY_VERSION, at: new Date().toISOString(), note: 'implicit via Welcome disclaimer' },
+                  agreedPrivacy: { value: true, version: POLICY_VERSION, at: new Date().toISOString(), note: 'implicit via Welcome disclaimer' },
+                  method:        'google',
+                  userAgent:     (navigator.userAgent || '').slice(0, 200),
+                }));
+              } catch (e) { /* private mode etc — skip */ }
               const r = await groundedApi.groundedAuth.signInWithGoogle();
               // If Google sign-in was cancelled or failed, clear the flag so
               // it doesn't fire on a future successful sign-in.
@@ -7700,6 +7777,7 @@
             onSignIn={() => go('signin')}
             onContinueAnon={() => go('resonance')}
             lang={(data && data.lang) || 'en'}
+            onChangeLang={(newLang) => updateData({ lang: newLang })}
           />; break;
         case 'resonance':
           // PATTERN A (single-entry) — if multi-entry added later (e.g.,
@@ -8460,6 +8538,18 @@
               // signInWithGoogle resolves synchronously via popup, the flag is
               // present when the auth listener fires.
               try { localStorage.setItem('grounded_show_trial_welcome', '1'); } catch (e) {}
+              // V57.1.3 — Consent audit trail for Google signup path.
+              // Welcome screen shows Terms/Privacy disclaimer below; clicking
+              // Continue with Google = implicit consent to current versions.
+              try {
+                localStorage.setItem('grounded_pending_consent', JSON.stringify({
+                  agreedAge:     { value: true, version: '16+',          at: new Date().toISOString(), note: 'implicit via Welcome disclaimer' },
+                  agreedTos:     { value: true, version: POLICY_VERSION, at: new Date().toISOString(), note: 'implicit via Welcome disclaimer' },
+                  agreedPrivacy: { value: true, version: POLICY_VERSION, at: new Date().toISOString(), note: 'implicit via Welcome disclaimer' },
+                  method:        'google',
+                  userAgent:     (navigator.userAgent || '').slice(0, 200),
+                }));
+              } catch (e) { /* private mode etc — skip */ }
               const r = await groundedApi.groundedAuth.signInWithGoogle();
               // If Google sign-in was cancelled or failed, clear the flag so
               // it doesn't fire on a future successful sign-in.
@@ -8472,6 +8562,7 @@
             onSignIn={() => go('signin')}
             onContinueAnon={() => go('resonance')}
             lang={(data && data.lang) || 'en'}
+            onChangeLang={(newLang) => updateData({ lang: newLang })}
           />;
       }
 
