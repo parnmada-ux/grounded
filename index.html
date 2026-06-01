@@ -1343,6 +1343,7 @@
           "That code didn't work. Check it and try again?": "โค้ดนี้ใช้ไม่ได้ ลองตรวจสอบและลองใหม่อีกครั้ง",
           "Something went wrong. Try again?": "มีบางอย่างผิดพลาด ลองอีกครั้งนะคะ",
           "Code redemption is coming soon — we'll let you know.": "ระบบใส่โค้ดจะมาเร็วๆ นี้ — ปานจะแจ้งให้ทราบ",
+          "Sign up first — you'll enter your code at checkout.": "สมัครสมาชิกก่อนนะคะ — แล้วใส่ code ตอนชำระเงินได้เลย",
           "Redeem": "ใช้โค้ด",
           "1 day of MindoDay left — pick your path": "เหลือ 1 วันสำหรับ MindoDay — เลือกแผนของคุณ",
           "{n} days of MindoDay left": "เหลือเวลา {n} วันสำหรับ MindoDay",
@@ -4321,6 +4322,19 @@
         // handles trial/active/lapsed labeling itself; Settings menu is now
         // a neutral entry point).
         { label: _isThai ? 'สมาชิก' : 'Subscription', action: onPremium },
+        // V57.2.2 — Founder Code retroactive entry. Some founders forget to
+        // enter their code at Stripe Checkout. This mailto-based escape hatch
+        // lets them email hello@ to apply later. Parn applies manually via
+        // Stripe Dashboard for now; wire to Stripe API in V57.3+.
+        { label: _isThai ? '🎟️ มีโค้ด Founder?' : '🎟️ Have a Founder Code?',
+          action: () => {
+            const subject = encodeURIComponent(_isThai ? 'ขอใช้ Founder Code' : 'Apply Founder Code');
+            const body = encodeURIComponent(_isThai
+              ? 'สวัสดีค่ะปาน,\n\nขอใช้ Founder Code:\n[ใส่ code ที่นี่]\n\nอีเมลที่สมัคร MindoDay:\n[อีเมลที่ใช้สมัคร]\n\nขอบคุณค่ะ'
+              : 'Hi Parn,\n\nI would like to apply my Founder Code:\n[paste code here]\n\nSignup email used for MindoDay:\n[email]\n\nThanks!');
+            window.location.href = `mailto:hello@mindoday.com?subject=${subject}&body=${body}`;
+          }
+        },
         { label: _isThai ? 'ภาษา' : 'Language', action: onLanguage },
         { label: _isThai ? 'ส่งออกข้อมูล' : 'Export my data', action: onExport },
         { label: _isThai ? 'นโยบายความเป็นส่วนตัว' : 'Privacy policy', action: onPrivacy },
@@ -6508,10 +6522,10 @@
             {_isThai ? 'เริ่ม 7 วันของฉัน' : 'Begin my 7 days'}
           </button>
 
-          <button onClick={onHaveCode} className="mt-12 text-g-deep text-sm underline font-semibold">
-            {_isThai ? 'มีโค้ดส่วนลด?' : 'Have a code?'}
-          </button>
-          <button onClick={onLater} className="mt-2.5 text-g-gray text-sm underline">
+          {/* V57.2.2 — "Have a code?" removed from Trial Welcome (was confusing UX since codes apply at Stripe Checkout).
+              Moved to Settings → Account as "มีโค้ด Founder?" for retroactive application.
+              "Maybe later" kept as escape hatch. */}
+          <button onClick={onLater} className="mt-12 text-g-gray text-sm underline">
             {_isThai ? 'ไว้ทีหลัง' : 'Maybe later'}
           </button>
         </div>
@@ -6605,8 +6619,8 @@
                 : 'Something went wrong. Try again?');
             }
           } else {
-            // V25 stub — Worker not yet shipped
-            setError("Code redemption is coming soon — we'll let you know.");
+            // V57.2.1 — guide users to proper Stripe Checkout flow
+            setError(t("Sign up first — you'll enter your code at checkout."));
           }
         } catch (e) {
           console.warn('[V25] redeemCode threw:', e);
