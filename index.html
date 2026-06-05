@@ -481,12 +481,15 @@
       ],
       Ambition: [
         { emoji:'🚀', body:'"Write down a dream goal — and one tiny first step."' },
-        { emoji:'📅', body:'"Block 30 minutes this week for the thing you keep postponing."' },
+        // V57.5 P1 #4 — softened per Charlotte. Was: "Block 30 minutes this week..."
+        // Hard times feel like an obligation on low-energy days.
+        { emoji:'📅', body:'"Carve out some time this week for the thing you keep postponing — any amount counts."' },
         { emoji:'🌟', body:'"Reach out to someone whose work you admire."' },
       ],
       Growth: [
         { emoji:'🌱', body:'"Try one thing this week that scares you a little."' },
-        { emoji:'📖', body:'"Read or listen to 10 minutes of a book that challenges you."' },
+        // V57.5 P1 #4 — softened. Was: "10 minutes of a book".
+        { emoji:'📖', body:'"Read or listen to a few pages of a book that challenges you — even just one."' },
         { emoji:'🪞', body:'"Reflect on one belief you\'ve outgrown."' },
       ],
       Impact: [
@@ -517,15 +520,19 @@
       Stability: [
         { emoji:'🛏️', body:'"Reset one small corner of your space tonight."' },
         { emoji:'📋', body:'"Write down a tiny routine that grounds your week."' },
-        { emoji:'💰', body:'"Spend 15 min on something that future-you will thank you for."' },
+        // V57.5 P1 #4 — softened. Was: "Spend 15 min on something..."
+        { emoji:'💰', body:'"Spend some time on something that future-you will thank you for — any amount works."' },
       ],
       Health: [
-        { emoji:'🚶', body:'"Take a 20-minute walk outside — phone-free."' },
+        // V57.5 P1 #4 — softened. Was: "Take a 20-minute walk outside — phone-free."
+        { emoji:'🚶', body:'"Move your body outside — any way, any duration, phone-free."' },
         { emoji:'🥗', body:'"Make one meal that nourishes you."' },
-        { emoji:'😴', body:'"Get to bed 30 minutes earlier tonight."' },
+        // V57.5 P1 #4 — softened. Was: "Get to bed 30 minutes earlier tonight."
+        { emoji:'😴', body:'"Get to bed earlier tonight — even just a few minutes."' },
       ],
       Peace: [
-        { emoji:'🧘', body:'"Sit in silence for 5 minutes — no input."' },
+        // V57.5 P1 #4 — softened. Was: "Sit in silence for 5 minutes — no input."
+        { emoji:'🧘', body:'"Sit in silence — even just one full breath — with no input."' },
         { emoji:'🌅', body:'"Watch a sunrise or sunset slowly, with no phone."' },
         { emoji:'🛁', body:'"Take a long bath, shower, or rest with no agenda."' },
       ],
@@ -560,12 +567,14 @@
         { emoji:'✍️', body:'"Sign or share something for an issue that matters to you."' },
       ],
       Nature: [
-        { emoji:'🌳', body:'"Spend 20 minutes near trees, water, or open sky."' },
+        // V57.5 P1 #4 — softened. Was: "Spend 20 minutes near trees..."
+        { emoji:'🌳', body:'"Spend some time near trees, water, or open sky — even just a few minutes."' },
         { emoji:'🌸', body:'"Notice 5 living things on your walk today."' },
         { emoji:'🌧️', body:'"Step outside in the weather — whatever it is."' },
       ],
       Spirituality: [
-        { emoji:'🕯️', body:'"Light a candle and sit with your thoughts for 5 minutes."' },
+        // V57.5 P1 #4 — softened. Was: "Light a candle and sit with your thoughts for 5 minutes."
+        { emoji:'🕯️', body:'"Light a candle and sit with your thoughts — for as long as feels right."' },
         { emoji:'🙏', body:'"Pray, meditate, or pause in stillness today."' },
         { emoji:'📿', body:'"Read one page of a text that grounds you."' },
       ],
@@ -2804,12 +2813,18 @@
                 only if the host App passes a handler (defensive). */}
             {typeof onCrisisResources === 'function' && (
               <div className="text-center mt-2 mb-6">
+                {/* V57.5 P2 #5 (Charlotte) — emoji + em-dash kept plain; only
+                    the action text is underlined for clean visual separation. */}
                 <button
                   onClick={onCrisisResources}
-                  className="text-g-gray text-[12px] underline hover:text-g-deep"
+                  className="text-g-gray text-[12px] hover:text-g-deep"
                   aria-label={_isThaiH ? 'สายด่วนช่วยเหลือ' : 'Crisis resources'}
                 >
-                  {_isThaiH ? '📞 ต้องการความช่วยเหลือเร่งด่วน? — ดูสายด่วน' : '📞 Need urgent support? — Crisis resources'}
+                  {_isThaiH ? (
+                    <React.Fragment>📞 ต้องการความช่วยเหลือเร่งด่วน? — <span className="underline">ดูสายด่วน</span></React.Fragment>
+                  ) : (
+                    <React.Fragment>📞 Need urgent support? — <span className="underline">Crisis resources</span></React.Fragment>
+                  )}
                 </button>
               </div>
             )}
@@ -3258,9 +3273,10 @@
               {t("findahelpline.com")}
             </a>
             {typeof onCrisisResources === 'function' && (
+              // V57.5 P2 #5 (Charlotte) — arrow plain, text underlined.
               <button onClick={onCrisisResources}
-                      className="block mx-auto mt-4 text-g-deep text-sm underline font-semibold">
-                Full crisis-resources screen →
+                      className="block mx-auto mt-4 text-g-deep text-sm font-semibold">
+                <span className="underline">Full crisis-resources screen</span> →
               </button>
             )}
           </div>
@@ -5271,6 +5287,13 @@
         }
       };
 
+      // V57.5 P2 #6 — defensive save feedback (Charlotte: username/birthday
+      // "set yesterday, maybe disappeared"). Brief flash + console diagnostics
+      // so a save that silently fails is visible. Toast is a 1.5s flash; it
+      // doesn't block; failures are logged with the patch payload so we can
+      // trace which field caused the issue.
+      const [saveFlash, setSaveFlash] = useState(null);  // null | 'saved' | 'error'
+
       const handleDone = () => {
         if (usernameTaken) return; // block save if invalid
         // V15/Bug5: if birthday is transitioning from unset → set on this Done
@@ -5285,7 +5308,16 @@
         }
         // No new birthday: commit directly (no lock change).
         const birthdaySet = !!bday || bdayLocked;
-        onCommit({ ...d, birthdaySet });
+        try {
+          onCommit({ ...d, birthdaySet });
+          console.log('[V57.5/AccountSave] committed patch with keys:', Object.keys(d));
+          setSaveFlash('saved');
+          setTimeout(() => setSaveFlash(null), 1500);
+        } catch (e) {
+          console.error('[V57.5/AccountSave] commit threw:', e, 'draft:', d);
+          setSaveFlash('error');
+          setTimeout(() => setSaveFlash(null), 3000);
+        }
       };
 
       return (
@@ -5293,9 +5325,11 @@
           <div className="px-6 pt-6 pb-2 flex items-center justify-between">
             <BackArrow onClick={onExit} />
             <h3 className="font-serif text-[22px] text-g-charcoal">{t("Account")}</h3>
+            {/* V57.5 P2 #6 — Done button briefly flashes "Saved ✓" / "Save failed" */}
             <button onClick={handleDone}
-                    className={`text-base ${usernameTaken ? 'text-g-gray' : 'text-g-deep font-semibold'}`}>
-              {t("Done")}
+                    className={`text-base ${usernameTaken ? 'text-g-gray' : (saveFlash === 'saved' ? 'text-g-green font-semibold' : saveFlash === 'error' ? 'font-semibold' : 'text-g-deep font-semibold')}`}
+                    style={saveFlash === 'error' ? { color: '#C97C7C' } : null}>
+              {saveFlash === 'saved' ? t('Saved ✓') : saveFlash === 'error' ? t('Save failed — try again') : t("Done")}
             </button>
           </div>
           <div className="flex-1 overflow-y-auto no-scrollbar px-6 pt-4 pb-8">
@@ -6283,11 +6317,16 @@
                   ))}
                 </ul>
                 {typeof onCrisisResources === 'function' && (
+                  // V57.5 P2 #5 (Charlotte) — arrow plain, text underlined.
                   <button
                     onClick={onCrisisResources}
-                    className="mt-3 text-g-deep text-sm underline font-semibold"
+                    className="mt-3 text-g-deep text-sm font-semibold"
                   >
-                    {_isThai ? 'ดูสายด่วนทั้งหมด →' : 'See all crisis hotlines →'}
+                    {_isThai ? (
+                      <React.Fragment><span className="underline">ดูสายด่วนทั้งหมด</span> →</React.Fragment>
+                    ) : (
+                      <React.Fragment><span className="underline">See all crisis hotlines</span> →</React.Fragment>
+                    )}
                   </button>
                 )}
               </div>
@@ -7261,6 +7300,11 @@
       const [activeExerciseId, setActiveExerciseId] = useState(null);
       const [activeInfoExerciseId, setActiveInfoExerciseId] = useState(null);
       const [groundMeFrom, setGroundMeFrom] = useState('gm_triage');
+      // V57.5 P1 #3 — Track entry point for Crisis Resources screen.
+      // Without this, Back/Done both fell through to 'home' regardless of how
+      // the user reached the screen (Settings menu → CR → Back went Home, not
+      // back to Settings). Mirrors the groundMeFrom pattern just above. */
+      const [crisisResourcesFrom, setCrisisResourcesFrom] = useState('home');
       const [activeMirrorField, setActiveMirrorField] = useState(null);
 
       // V15: skip echoing storage on hydration ticks (server snapshots, initial localStorage load)
@@ -8631,8 +8675,9 @@
             }}
             /* V57.1.7 — wire Crisis Resources footer link + thread real lang
                so HomeScreen's _isThaiH actually fires (was always false due
-               to broken `typeof lang` check originally introduced in V54). */
-            onCrisisResources={() => go('crisis_resources')}
+               to broken `typeof lang` check originally introduced in V54).
+               V57.5 P1 #3 — record entry point so CR's Back/Done route back here. */
+            onCrisisResources={() => { setCrisisResourcesFrom('home'); go('crisis_resources'); }}
             lang={(data && data.lang) || 'en'}
           />; break;
         /* V25/Phase2 — new routes */
@@ -8896,14 +8941,17 @@
             onMoment={() => { setGroundMeFrom('gm_hard'); go('gm_moment'); }}
             onRemember={() => { recordGroundMe('hard', 'i_remember'); go('home'); }}
             onHome={() => go('home')}
-            onCrisisResources={() => go('crisis_resources')} />; break;
+            onCrisisResources={() => { setCrisisResourcesFrom('gm_hard'); go('crisis_resources'); }} />; break;
         case 'crisis_resources':
           // V57.1 — Item 13. Reachable from GroundMe Hard "Full crisis-resources
           // screen →" link, from Settings → Crisis Resources, and from Support →
           // CRISIS SUPPORT "See all crisis hotlines →".
+          // V57.5 P1 #3 — Both Back and Done now route back to the entry-point
+          // screen via crisisResourcesFrom (Charlotte/Parn report: from Settings,
+          // both buttons used to land on Home instead of Settings).
           view = <CrisisResourcesScreen
-            onBack={goBack}
-            onHome={() => go('home')}
+            onBack={() => go(crisisResourcesFrom || 'home')}
+            onHome={() => go(crisisResourcesFrom || 'home')}
             lang={(data && data.lang) || 'en'}
           />; break;
         case 'gm_moment':
@@ -9015,7 +9063,7 @@
             onLanguage={() => go('language')}
             onExport={() => go('export_data')}
             onPrivacy={() => go('privacy')}
-            onCrisisResources={() => go('crisis_resources')}
+            onCrisisResources={() => { setCrisisResourcesFrom('settings'); go('crisis_resources'); }}
             onLogout={async () => {
               // V15/E8: async sign-out. The auth listener (A3) catches the
               // sign-out event and the resolver (J1) routes back to welcome.
@@ -9045,7 +9093,7 @@
         case 'support':
           view = <SupportScreen
             onBack={() => go('settings')}
-            onCrisisResources={() => go('crisis_resources')}
+            onCrisisResources={() => { setCrisisResourcesFrom('support'); go('crisis_resources'); }}
             lang={(data && data.lang) || 'en'}
           />; break;
         case 'account':

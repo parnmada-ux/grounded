@@ -796,19 +796,66 @@ const groundedAuth = {
   },
 
   async signInWithEmail(email, password) {
+    // V57.5 P0 #2 — Diagnostic logging for linked-account email/password
+    // hangs (Parn's case: G+email linked → email login spins forever).
+    // We log the elapsed ms so future reports include actionable timing data.
+    // The wrapper catches Firebase auth errors as before; the only difference
+    // is what we record in console for triage.
+    const t0 = Date.now();
     try {
       const cred = await signInWithEmailAndPassword(auth, email, password);
+      const elapsed = Date.now() - t0;
+      if (elapsed > 3000) {
+        console.warn('[V57.5/signInWithEmail] SLOW resolve — elapsed=' + elapsed + 'ms · this may indicate a linked-account state issue');
+      }
+      // Defensive validation: cred.user must exist + have uid. If Firebase
+      // returns a hollow cred object we flag rather than report ok:true blindly.
+      if (!cred || !cred.user || !cred.user.uid) {
+        console.error('[V57.5/signInWithEmail] resolved but cred.user is incomplete:', cred);
+        return { ok: false, code: 'auth-record-incomplete', error: 'Sign-in returned an incomplete user record.' };
+      }
       return { ok: true, user: cred.user };
     } catch (e) {
+      const elapsed = Date.now() - t0;
+      console.warn('[V57.5/signInWithEmail] failed — code=' + (e && e.code) + ' · elapsed=' + elapsed + 'ms');
       return { ok: false, code: e.code, error: e.message };
     }
   },
 
   async signInWithGoogle() {
+    // V57.5 P0 #1 — Defensive logging for Pim-style silent failures.
+    // User Pim attempted Google sign-in and saw the Account screen as if
+    // success, but Firebase Auth had no record. The fix here can't repair
+    // a Firebase server failure, but it can REFUSE to report ok:true when
+    // cred.user is missing critical fields, so the UI surfaces an error
+    // rather than rendering a logged-in shell over a nonexistent user.
+    const t0 = Date.now();
     try {
       const cred = await signInWithPopup(auth, googleProvider);
+      const elapsed = Date.now() - t0;
+      if (elapsed > 5000) {
+        console.warn('[V57.5/signInWithGoogle] SLOW resolve — elapsed=' + elapsed + 'ms');
+      }
+      // Defensive validation
+      if (!cred || !cred.user) {
+        console.error('[V57.5/signInWithGoogle] resolved without cred.user — likely popup quirk:', cred);
+        return { ok: false, code: 'auth-popup-empty', error: 'Sign-in popup returned no user.' };
+      }
+      if (!cred.user.uid) {
+        console.error('[V57.5/signInWithGoogle] cred.user.uid missing — Firebase Auth record likely failed to write:', cred.user);
+        return { ok: false, code: 'auth-record-missing', error: 'Sign-in succeeded with Google but the account record was not created. Please try again.' };
+      }
+      if (!cred.user.email) {
+        console.error('[V57.5/signInWithGoogle] cred.user.email missing — Google scope or consent issue:', cred.user.uid);
+        // We still let this through (returned ok:true) because some Google
+        // accounts genuinely omit the email scope, but we log loudly so it's
+        // visible during launch-week triage.
+        console.warn('[V57.5/signInWithGoogle] proceeding with email-less cred — may break Firestore writes that rely on user.email');
+      }
       return { ok: true, user: cred.user };
     } catch (e) {
+      const elapsed = Date.now() - t0;
+      console.warn('[V57.5/signInWithGoogle] failed — code=' + (e && e.code) + ' · elapsed=' + elapsed + 'ms');
       return { ok: false, code: e.code, error: e.message };
     }
   },
