@@ -938,7 +938,7 @@
           "Get gentle nudges to live as your true self in the real world.": "รับการเตือนเบาๆ ให้ได้ใช้ชีวิตเป็นตัวเองในโลกจริง",
           "RETURN": "RETURN",
           "Come back when lost": "กลับมาเมื่อหลงทาง",
-          "When life gets foggy, we'll remind you who you are.": "ในวันที่ทุกอย่างพร่าเลือน ปานจะช่วยเตือนว่าคุณคือใคร",
+          "When life gets foggy, we'll remind you who you are.": "ในวันที่ทุกอย่างพร่าเลือน เราจะช่วยเตือนว่าคุณคือใคร",
           "MY PRACTICE": "MY PRACTICE",
           "Build yourself, daily": "เติบโตจากภายใน วันละนิด",
           "Small exercises to help you reconnect with who you are — one day at a time.": "แบบฝึกเล็กๆ ที่ช่วยให้คุณกลับมาอยู่กับตัวเอง วันละก้าว",
@@ -1229,7 +1229,7 @@
           "Mobile": "เบอร์มือถือ",
           "Add your mobile": "เพิ่มเบอร์มือถือ",
           "Birthday": "วันเกิด",
-          "Birthday is locked once set. If you made a mistake, please contact support and we'll be able to help.": "วันเกิดจะถูกล็อคเมื่อตั้งค่าแล้ว หากกรอกผิด โปรดติดต่อปาน แล้วจะช่วยแก้ให้",
+          "Birthday is locked once set. If you made a mistake, please contact support and we'll be able to help.": "วันเกิดจะถูกล็อคเมื่อตั้งค่าแล้ว หากกรอกผิด โปรดติดต่อทีม MindoDay แล้วจะช่วยแก้ให้",
           "Set carefully — once saved, this can't be changed.": "ตั้งค่าให้ดี — เมื่อบันทึกแล้ว เปลี่ยนไม่ได้",
           "Your Journey": "เส้นทางของคุณ",
           "Manage →": "จัดการ →",
@@ -1263,7 +1263,7 @@
           "Type here": "พิมพ์ที่นี่",
           "Delete my account": "ลบบัญชีของฉัน",
           "Save your birthday?": "บันทึกวันเกิดของคุณ?",
-          "Once saved, this can't be changed. If you make a mistake, contact support and we'll help.": "เมื่อบันทึกแล้ว เปลี่ยนไม่ได้ หากกรอกผิด โปรดติดต่อปาน แล้วจะช่วยแก้ให้",
+          "Once saved, this can't be changed. If you make a mistake, contact support and we'll help.": "เมื่อบันทึกแล้ว เปลี่ยนไม่ได้ หากกรอกผิด โปรดติดต่อทีม MindoDay แล้วจะช่วยแก้ให้",
           "Save birthday": "บันทึกวันเกิด",
           "Tap to choose your date": "แตะเพื่อเลือกวันที่",
           "January…December": "use existing `_TH_MONTHS` array (line 4472)",
@@ -1342,7 +1342,7 @@
           "Enter your code": "ใส่โค้ดของคุณ",
           "That code didn't work. Check it and try again?": "โค้ดนี้ใช้ไม่ได้ ลองตรวจสอบและลองใหม่อีกครั้ง",
           "Something went wrong. Try again?": "มีบางอย่างผิดพลาด ลองอีกครั้งนะคะ",
-          "Code redemption is coming soon — we'll let you know.": "ระบบใส่โค้ดจะมาเร็วๆ นี้ — ปานจะแจ้งให้ทราบ",
+          "Code redemption is coming soon — we'll let you know.": "ระบบใส่โค้ดจะมาเร็วๆ นี้ — เราจะแจ้งให้ทราบ",
           "Sign up first — you'll enter your code at checkout.": "สมัครสมาชิกก่อนนะคะ — แล้วใส่ code ตอนชำระเงินได้เลย",
           "Redeem": "ใช้โค้ด",
           "1 day of MindoDay left — pick your path": "เหลือ 1 วันสำหรับ MindoDay — เลือกแผนของคุณ",
@@ -2751,8 +2751,15 @@
                 </p>
               </div>
             )}
+            {/* V57.3 — Personalize greeting with username when set
+                 (per Charlotte feedback: "Hello good morning, Charlotte").
+                 Falls back to displayName, then no name appended. */}
             <h1 className="font-serif text-[30px] text-g-charcoal">
-              {greeting.text} <span>{greeting.emoji}</span>
+              {greeting.text}{(() => {
+                const u = (data && data.user) || {};
+                const personalName = u.username || u.displayName || '';
+                return personalName ? `, ${personalName}` : '';
+              })()} <span>{greeting.emoji}</span>
             </h1>
             {(data.topValues && data.topValues.length > 0) && (
               <>
@@ -4329,9 +4336,11 @@
         { label: _isThai ? '🎟️ มีโค้ด Founder?' : '🎟️ Have a Founder Code?',
           action: () => {
             const subject = encodeURIComponent(_isThai ? 'ขอใช้ Founder Code' : 'Apply Founder Code');
+            // V57.2.3 — use \r\n (CRLF) for cross-client line breaks. Gmail mobile
+            // collapses lone \n; CRLF respects line breaks on iOS Gmail + Mail.app.
             const body = encodeURIComponent(_isThai
-              ? 'สวัสดีค่ะปาน,\n\nขอใช้ Founder Code:\n[ใส่ code ที่นี่]\n\nอีเมลที่สมัคร MindoDay:\n[อีเมลที่ใช้สมัคร]\n\nขอบคุณค่ะ'
-              : 'Hi Parn,\n\nI would like to apply my Founder Code:\n[paste code here]\n\nSignup email used for MindoDay:\n[email]\n\nThanks!');
+              ? 'สวัสดีค่ะทีม MindoDay,\r\n\r\nFounder Code ของฉัน: [ใส่ code]\r\n\r\nEmail ที่สมัคร: [ใส่อีเมล]\r\n\r\nขอบคุณค่ะ'
+              : 'Hi MindoDay team,\r\n\r\nMy Founder Code: [paste code]\r\n\r\nMy signup email: [paste email]\r\n\r\nThanks!');
             window.location.href = `mailto:hello@mindoday.com?subject=${subject}&body=${body}`;
           }
         },
@@ -4733,10 +4742,10 @@
             {subState.tier === 'premium' && (status === 'active' || status === 'trialing' || status === 'grace') && (
               <div className="mt-6 text-center">
                 <a
-                  href={'mailto:parnparnmada@gmail.com'
+                  href={'mailto:hello@mindoday.com'
                     + '?subject=' + encodeURIComponent('Pro Founder pricing request')
                     + '&body=' + encodeURIComponent(
-                      "Hi Parn,\n\n"
+                      "Hi MindoDay team,\n\n"
                       + "I'm currently a Premium subscriber and I'd love to upgrade to Pro at founder pricing.\n\n"
                       + "Here's a bit about me and how I'd use Pro features:\n"
                       + "[your answer here]\n\n"
@@ -6077,7 +6086,7 @@
               'Account email: ' + (accountEmail || '(please fill in)'),
             ];
         const body = bodyLines.join('\r\n');
-        const href = 'mailto:parnparnmada@gmail.com'
+        const href = 'mailto:hello@mindoday.com'
           + '?subject=' + encodeURIComponent(subject)
           + '&body='    + encodeURIComponent(body);
         window.location.href = href;
@@ -6113,8 +6122,8 @@
               </div>
               <p className="text-center text-[11px] text-g-gray mt-4">
                 {_isThai
-                  ? 'หรือส่งเองมาที่ parnparnmada@gmail.com'
-                  : 'Or email us directly at parnparnmada@gmail.com'}
+                  ? 'หรือส่งเองมาที่ hello@mindoday.com'
+                  : 'Or email us directly at hello@mindoday.com'}
               </p>
             </div>
           </div>
@@ -7628,18 +7637,40 @@
         // (mirrorBaselineDate present) bypass TW — they're returning, not new.
         try {
           if (user && localStorage.getItem('grounded_show_trial_welcome') === '1') {
-            const _isExistingUser = !!(liveData && liveData.mirrorBaselineDate);
+            // V57.4 — Fix Charlotte/Parn-reported account-linking routing bug.
+            //
+            // Old logic relied on liveData.mirrorBaselineDate to detect "existing
+            // user". Problem: when Firebase auto-links a Google sign-in to an
+            // existing email account (per "Link accounts that use the same email"
+            // Firebase setting), the liveData listener might not have hydrated
+            // yet at the moment this check fires — race condition pushes a
+            // returning user into Trial Welcome.
+            //
+            // New logic uses Firebase's authoritative user.metadata to detect
+            // newly-created accounts (creationTime === lastSignInTime within
+            // ~10 seconds = genuinely new signup). Existing users with the
+            // flag accidentally set are routed to whatever their default
+            // resolver picks (Home, Mirror onboarding resume, etc.).
+            const _meta = user.metadata || {};
+            const _created = _meta.creationTime ? new Date(_meta.creationTime).getTime() : 0;
+            const _lastSignedIn = _meta.lastSignInTime ? new Date(_meta.lastSignInTime).getTime() : 0;
+            const _isNewlyCreated = _created > 0 && _lastSignedIn > 0
+              && Math.abs(_lastSignedIn - _created) < 10000; // < 10s = signup, not return
+            const _isExistingUser = !_isNewlyCreated || !!(liveData && liveData.mirrorBaselineDate);
+
             if (_isExistingUser || !PHASE_2_TRIAL_UI_ENABLED) {
-              // Existing user or Phase 2 disabled — clear flag without TW.
+              // Returning user (linked account, prior sign-in, or Phase 2
+              // disabled) — clear flag, do NOT force TW. Default resolver
+              // picks the right screen (Home if Mirror done, mirror onboarding
+              // resume if not, etc.).
               localStorage.removeItem('grounded_show_trial_welcome');
             } else if (user.emailVerified) {
-              // V51 happy path: Verified (custom-token signin from
-              // completeSignup, or natively-verified Google signup) → TW.
+              // V51 happy path: Genuinely new + verified → Trial Welcome.
               localStorage.removeItem('grounded_show_trial_welcome');
               next = 'trial_welcome';
             } else {
-              // Defensive safety net (shouldn't fire under V51). Keep the
-              // flag so a future hydration pass can promote to TW.
+              // Defensive safety net for new unverified signups (shouldn't
+              // fire under V51). Keep flag for future hydration pass.
               next = 'verify_email';
             }
           }
