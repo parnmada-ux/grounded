@@ -975,10 +975,12 @@
           "This connects to:": "สัมพันธ์กับ:",
           "Click to write": "แตะเพื่อเขียน",
           "Skip today →": "ข้ามวันนี้ →",
+          "Skip today": "ข้ามวันนี้",
           "(That's okay. Rest is good.)": "(ไม่เป็นไรนะ พักบ้างก็ดี)",
           "✓ Sent": "✓ ส่งแล้ว",
           "Send": "ส่ง",
           "📅 View my reflections →": "📅 ดูบันทึกที่ผ่านมา →",
+          "View my reflections": "ดูบันทึกที่ผ่านมา",
           "Drafts auto-submit at midnight, so nothing gets lost.": "ฉบับร่างจะถูกส่งให้เองตอนเที่ยงคืน ไม่มีอะไรหายไป",
           "Send your reflection?": "ส่งบันทึกนี้?",
           "Done": "เสร็จสิ้น",
@@ -992,6 +994,7 @@
           "What's on your mind?": "วันนี้คิดอะไรอยู่?",
           "Your words stay yours.": "คำของคุณเป็นของคุณ",
           "📅 View my writing history →": "📅 ดูที่เคยเขียน →",
+          "View my writing history": "ดูที่เคยเขียน",
           "Send your free write?": "ส่ง Free Write นี้?",
           "My Writing History 🗓": "ที่เคยเขียน 🗓",
           "● = day you wrote something": "● = วันที่คุณได้เขียน",
@@ -1002,10 +1005,12 @@
           "Cancel": "ยกเลิก",
           "How are you feeling?": "ตอนนี้คุณรู้สึกยังไง?",
           "📅 View my history →": "📅 ดูประวัติของฉัน →",
+          "View my history": "ดูประวัติของฉัน",
           "Remember who you are.": "อย่าลืมว่าคุณคือใคร",
           "MY CORE VALUES": "คุณค่าหลักของฉัน",
           "MY QUOTE": "คำพูดของฉัน",
           "🫁 Take a moment →": "🫁 ใช้เวลาสักครู่ →",
+          "Take a moment": "ใช้เวลาสักครู่",
           "I remember now": "ฉันจำได้แล้ว",
           "WHAT HELPS ME": "สิ่งที่ช่วยฉัน",
           "✨ Try one of these now?": "✨ ลองทำสักอย่างดูไหม?",
@@ -1031,6 +1036,7 @@
           "Selected: {n}/5": "เลือกแล้ว: {n}/5",
           "Continue": "ต่อไป",
           "I'm not sure yet →": "ยังไม่แน่ใจ →",
+          "I'm not sure yet": "ยังไม่แน่ใจ",
           "Step 1b/3": "ขั้นที่ 1b/3",
           "If you had to protect just 3,": "ถ้าต้องเลือกแค่ 3 ข้อ",
           "which would they be?": "คุณจะเลือกข้อไหน?",
@@ -1070,6 +1076,8 @@
           "My Mirror": "Mirror",
           "(This can change. Let it be.)": "(ทุกอย่างเปลี่ยนได้ ไม่ต้องกังวล)",
           "📅 View my mirror history →": "📅 ดูประวัติ Mirror →",
+          "View my mirror history": "ดูประวัติ Mirror",
+          "Need to talk?": "อยากคุยกับใครสักคน?",
           "Edit": "แก้ไข",
           "✏️ What helps when you're feeling off? Add here.": "✏️ มีอะไรช่วยคุณตอนรู้สึกไม่เป็นตัวเอง? เพิ่มที่นี่",
           "Edit My Core Values": "แก้ไขคุณค่าหลัก",
@@ -2483,7 +2491,7 @@
           </div>
           <div className="pt-3 pb-20 flex flex-col items-center">
             <PillButton onClick={() => onContinue(picked)} disabled={!done}>{t("Continue")}</PillButton>
-            <button onClick={onSkip} className="text-g-deep text-sm underline font-semibold mt-4">{t("I'm not sure yet →")}</button>
+            <button onClick={onSkip} className="text-g-deep text-sm font-semibold mt-4"><span className="underline">{t("I'm not sure yet")}</span> →</button>
           </div>
         </div>
       );
@@ -2556,7 +2564,7 @@
               value={uncomfortable} onChange={e=>setUncomfortable(e.target.value)} />
             <p className="text-center text-g-gray text-sm italic mt-6">{t("This can change. Let it be.")}</p>
             <div className="text-center mt-3">
-              <button onClick={onSkip} className="text-g-deep text-sm underline font-semibold">{t("I'm not sure yet →")}</button>
+              <button onClick={onSkip} className="text-g-deep text-sm font-semibold"><span className="underline">{t("I'm not sure yet")}</span> →</button>
             </div>
           </div>
           <div className="pt-2 pb-20 flex justify-center">
@@ -2589,7 +2597,7 @@
             </p>
             <p className="text-center text-g-gray text-sm italic mt-5">{t("This can change. Let it be.")}</p>
             <div className="text-center mt-6">
-              <button onClick={onSkip} className="text-g-deep text-sm underline font-semibold">{t("I'm not sure yet →")}</button>
+              <button onClick={onSkip} className="text-g-deep text-sm font-semibold"><span className="underline">{t("I'm not sure yet")}</span> →</button>
             </div>
           </div>
           <div className="pt-3 pb-20 flex justify-center">
@@ -2865,7 +2873,7 @@
             </div>
             <EmptyMirrorBanner feature="daily reflection" onSetup={onSetupMirror} />
             <div className="text-center pb-6">
-              <button onClick={onHistory} className="text-g-deep text-sm underline font-semibold">{t("📅 View my reflections →")}</button>
+              <button onClick={onHistory} className="text-g-deep text-sm font-semibold">📅 <span className="underline">{t("View my reflections")}</span> →</button>
             </div>
           </div>
         );
@@ -2902,7 +2910,7 @@
               style={isLocked ? { backgroundColor: '#E8F0EC' } : null} />
             {!isLocked && (
               <div className="text-center mt-5">
-                <button onClick={onSkip} className="text-g-deep text-sm underline font-semibold">{t("Skip today →")}</button>
+                <button onClick={onSkip} className="text-g-deep text-sm font-semibold"><span className="underline">{t("Skip today")}</span> →</button>
                 <p className="text-g-gray text-xs mt-2">{t("(That's okay. Rest is good.)")}</p>
               </div>
             )}
@@ -2915,7 +2923,7 @@
             {!isLocked && (
               <PillButton onClick={() => setShowConfirm(true)} disabled={!text.trim()}>{t("Send")}</PillButton>
             )}
-            <button onClick={onHistory} className="text-g-deep text-sm underline font-semibold">{t("📅 View my reflections →")}</button>
+            <button onClick={onHistory} className="text-g-deep text-sm font-semibold">📅 <span className="underline">{t("View my reflections")}</span> →</button>
           </div>
           {/* V44: auto-submit disclaimer — ambient bottom footer, outside the
               scroll area + outside the V42 cluster. Only renders while editable
@@ -3036,7 +3044,7 @@
             {!isLocked && (
               <PillButton onClick={() => setShowConfirm(true)} disabled={!text.trim()}>{t("Send")}</PillButton>
             )}
-            <button onClick={onHistory} className="text-g-deep text-sm underline font-semibold">{t("📅 View my writing history →")}</button>
+            <button onClick={onHistory} className="text-g-deep text-sm font-semibold">📅 <span className="underline">{t("View my writing history")}</span> →</button>
           </div>
           {/* V44: auto-submit disclaimer — ambient bottom footer. */}
           {!isLocked && (
@@ -3145,7 +3153,7 @@
             ))}
           </div>
           <div className="text-center mt-10 pb-4">
-            <button onClick={onHistory} className="text-g-deep text-sm underline font-semibold">{t("📅 View my history →")}</button>
+            <button onClick={onHistory} className="text-g-deep text-sm font-semibold">📅 <span className="underline">{t("View my history")}</span> →</button>
           </div>
         </div>
       </div>
@@ -3182,9 +3190,9 @@
             </div>
           </div>
           <div className="text-center mt-5 space-y-3">
-            <button onClick={onMoment} className="text-g-deep text-sm underline font-semibold">{t("🫁 Take a moment →")}</button>
+            <button onClick={onMoment} className="text-g-deep text-sm font-semibold">🫁 <span className="underline">{t("Take a moment")}</span> →</button>
             <div></div>
-            <button onClick={onTalk} className="text-g-deep text-sm underline font-semibold">💬 Need to talk? →</button>
+            <button onClick={onTalk} className="text-g-deep text-sm font-semibold">💬 <span className="underline">{t("Need to talk?")}</span> →</button>
           </div>
         </div>
         <div className="pt-3 pb-20 flex justify-center">
@@ -3231,9 +3239,9 @@
             </div>
           </div>
           <div className="text-center mt-5 space-y-3">
-            <button onClick={onMoment} className="text-g-deep text-sm underline font-semibold">{t("🫁 Take a moment →")}</button>
+            <button onClick={onMoment} className="text-g-deep text-sm font-semibold">🫁 <span className="underline">{t("Take a moment")}</span> →</button>
             <div></div>
-            <button onClick={onTalk} className="text-g-deep text-sm underline font-semibold">💬 Need to talk? →</button>
+            <button onClick={onTalk} className="text-g-deep text-sm font-semibold">💬 <span className="underline">{t("Need to talk?")}</span> →</button>
           </div>
         </div>
         <div className="pt-3 pb-20 flex justify-center">
@@ -3281,7 +3289,7 @@
             )}
           </div>
           <div className="text-center mt-5">
-            <button onClick={onMoment} className="text-g-deep text-sm underline font-semibold">{t("🫁 Take a moment →")}</button>
+            <button onClick={onMoment} className="text-g-deep text-sm font-semibold">🫁 <span className="underline">{t("Take a moment")}</span> →</button>
             <p className="text-g-gray text-xs italic mt-1">{t("(a gentle pause)")}</p>
           </div>
           <div className="border-t border-g-line my-5"></div>
@@ -3448,7 +3456,7 @@
           <p className="text-center text-g-charcoal text-sm mt-1">{t("This is who you are.")}</p>
           <p className="text-center text-g-gray text-xs italic">{t("(This can change. Let it be.)")}</p>
           <div className="text-center mt-3">
-            <button onClick={onHistory} className="text-g-deep text-sm underline font-semibold">{t("📅 View my mirror history →")}</button>
+            <button onClick={onHistory} className="text-g-deep text-sm font-semibold">📅 <span className="underline">{t("View my mirror history")}</span> →</button>
           </div>
           <div className="space-y-3 mt-5 pb-4">
             <div className="card-outline p-5">
@@ -3690,7 +3698,7 @@
             </div>
             <EmptyMirrorBanner feature="weekly suggestions" onSetup={onSetupMirror} />
             <div className="text-center pb-6">
-              <button onClick={onHistory} className="text-g-deep text-sm underline font-semibold">{t("📅 View my history →")}</button>
+              <button onClick={onHistory} className="text-g-deep text-sm font-semibold">📅 <span className="underline">{t("View my history")}</span> →</button>
             </div>
           </div>
         );
@@ -3735,7 +3743,7 @@
               💡 Coming soon:<br/>Friend matching &amp; MindoDay events
             </p>
             <div className="text-center pb-6">
-              <button onClick={onHistory} className="text-g-deep text-sm underline font-semibold">{t("📅 View my history →")}</button>
+              <button onClick={onHistory} className="text-g-deep text-sm font-semibold">📅 <span className="underline">{t("View my history")}</span> →</button>
             </div>
           </div>
 
@@ -4000,7 +4008,7 @@
                 </p>
                 <PillButton onClick={onAddOrChange}>{t("Browse exercises →")}</PillButton>
               </div>
-              <button onClick={onHistory} className="mt-5 text-g-deep text-sm underline font-semibold">{t("📅 View my history →")}</button>
+              <button onClick={onHistory} className="mt-5 text-g-deep text-sm font-semibold">📅 <span className="underline">{t("View my history")}</span> →</button>
             </div>
             <BottomNav active="practice" onNav={onNav} />
           </div>
@@ -4060,7 +4068,7 @@
             </div>
             <div className="text-center text-sm space-y-3 pb-4">
               <button onClick={onAddOrChange} className="text-g-deep underline font-semibold block w-full">{t("+ Add or change exercises")}</button>
-              <button onClick={onHistory} className="text-g-deep underline font-semibold block w-full">{t("📅 View my history →")}</button>
+              <button onClick={onHistory} className="text-g-deep font-semibold block w-full">📅 <span className="underline">{t("View my history")}</span> →</button>
             </div>
           </div>
           <BottomNav active="practice" onNav={onNav} />
