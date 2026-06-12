@@ -97,6 +97,14 @@ import {
   Timestamp,
   onSnapshot,
   runTransaction,
+  // V57.7 — admin grant tool + audit log
+  collection,
+  addDoc,
+  query,
+  where,
+  orderBy,
+  limit as fsLimit,
+  getDocs,
 } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
 
 
@@ -1737,6 +1745,351 @@ const groundedSync = {
       const r = await ensureUserDocAndMigrate(currentUser);
       return { ok: true, ...r };
     } catch (e) {
+      return { ok: false, code: e.code, error: e.message };
+    }
+  },
+
+  // ─── V57.7 — Admin Founder Grant Tool ─────────────────────────────────────
+  //
+  //  ⚠️ SECURITY MODEL — READ BEFORE EDITING:
+  //
+  //  The client-side `/admin` password gate is UX-only — it prevents random
+  //  users from stumbling onto the form. The REAL security boundary is
+  //  Firestore Security Rules: only Parn's UID (or a custom-claim-marked
+  //  admin) may write to other users' subscription docs. See
+  //  ADMIN_TOOL_GUIDE.md → "Firestore rules required" for the rule snippet.
+  //
+  //  Without those rules, ANY signed-in user who guesses the password can
+  //  grant themselves Premium forever. Do not deploy V57.7 without first
+  //  pushing the matching Firestore rules.
+  //
+  //  Why client-side (not Worker / Admin SDK)?
+  //    - Worker scope was explicitly out-of-scope per V57.7 dispatch
+  //    - 5 named launch-week users need Premium NOW; Worker turnaround = days
+  //    - Firestore Rules + Parn-UID enforcement is a defensible interim
+  //    - V58 should migrate this to a Worker endpoint with Admin SDK
+  //
+  //  Architecture:
+  //    1. Look up user by email via Firestore query on users.user.email
+  //       (Admin SDK would query Firebase Auth; we don't have that client-side)
+  //    2. Write subscription patch to users/{uid}: status=active, tier, isFounder
+  //    3. Append audit row to code_redemptions/{auto-id}
+  //
+  //  All three writes happen from Parn's signed-in session — the Firestore
+  //  rules are what gate the cross-user write.
+
+  /**
+   * V57.7 — Find a user UID by their email via Firestore query.
+   * Returns { ok: true, uid, displayName, email } on success,
+   * { ok: false, code: 'not-found' | 'multiple' | 'query-failed' } otherwise.
+   *
+   * Note: this queries the `users` collection on `user.email` field —
+   * it does NOT query Firebase Auth directly (client SDK cannot).
+   * Users who signed up but never had a Firestore doc created will not
+   * be findable via this method.
+   */
+  async adminFindUserByEmail(email) {
+    if (!email || typeof email !== "string") {
+      return { ok: false, code: "invalid-email" };
+    }
+    if (!currentUser) {
+      return { ok: false, code: "admin-not-signed-in", error: "Sign in first — Firestore rules require Parn's UID." };
+    }
+    const normalized = email.trim().toLowerCase();
+    try {
+      const usersRef = collection(db, "users");
+      const q = query(usersRef, where("user.email", "==", normalized), fsLimit(2));
+      const snap = await getDocs(q);
+      if (snap.empty) {
+        // Fallback: try the top-level `email` field too (some early users have it there)
+        const q2 = query(usersRef, where("email", "==", normalized), fsLimit(2));
+        const snap2 = await getDocs(q2);
+        if (snap2.empty) return { ok: false, code: "not-found" };
+        if (snap2.size > 1) return { ok: false, code: "multiple" };
+        const d = snap2.docs[0];
+        const data = d.data() || {};
+        return { ok: true, uid: d.id, email: (data.user && data.user.email) || data.email || normalized, displayName: (data.user && data.user.displayName) || "" };
+      }
+      if (snap.size > 1) return { ok: false, code: "multiple" };
+      const d = snap.docs[0];
+      const data = d.data() || {};
+      return { ok: true, uid: d.id, email: (data.user && data.user.email) || normalized, displayName: (data.user && data.user.displayName) || "" };
+    } catch (e) {
+      console.error("[V57.7/adminFindUserByEmail] query threw:", e);
+      return { ok: false, code: "query-failed", error: e.message };
+    }
+  },
+
+  /**
+   * V57.7 — Grant Founder access directly to a user's Firestore subscription doc.
+   * Bypasses Stripe checkout entirely (for users who never reached Stripe).
+   *
+   * Writes:
+   *   1) users/{uid}.subscription: { status:'active', tier, isFounder:true,
+   *      founderCode, founderGrantedAt, founderGrantedBy:'admin', founderReason,
+   *      trialEnd:null }
+   *   2) code_redemptions/{auto-id}: full audit row (see AUDIT_LOG_SCHEMA.md)
+   *
+   * Returns { ok, redemptionId? } / { ok:false, code, error }.
+   */
+  async adminGrantFounder({ email, tier, founderCode, reason }) {
+    if (!email || typeof email !== "string") return { ok: false, code: "invalid-email" };
+    if (tier !== "premium" && tier !== "pro") return { ok: false, code: "invalid-tier" };
+    if (!currentUser) {
+      return { ok: false, code: "admin-not-signed-in", error: "Sign in first — Firestore rules require Parn's UID." };
+    }
+
+    const lookup = await this.adminFindUserByEmail(email);
+    if (!lookup.ok) return lookup;
+    const { uid, email: foundEmail, displayName } = lookup;
+
+    const code = (founderCode || "").trim() || "ADMIN_GRANT";
+    const cleanReason = (reason || "").trim() || null;
+    const grantedByEmail = currentUser.email || null;
+
+    try {
+      // 1) Update the target user's subscription state.
+      await updateDoc(doc(db, "users", uid), {
+        "subscription.status":            "active",
+        "subscription.tier":              tier,
+        "subscription.isFounder":         true,
+        "subscription.founderCode":       code,
+        "subscription.founderGrantedAt":  serverTimestamp(),
+        "subscription.founderGrantedBy":  "admin",
+        "subscription.founderGrantedByEmail": grantedByEmail,
+        "subscription.founderReason":     cleanReason,
+        "subscription.trialEndDate":      null,
+        "subscription.lookupKey":         tier === "premium" ? "premium_founder" : "pro_founder",
+        "subscription.lockedRate":        tier === "premium" ? 169 : 89,
+        updatedAt: serverTimestamp(),
+      });
+
+      // 2) Append to audit log. Auto-id doc.
+      const redemptionRef = await addDoc(collection(db, "code_redemptions"), clean({
+        userEmail:    foundEmail,
+        userId:       uid,
+        userDisplayName: displayName || null,
+        code,
+        codeType:     "admin_grant",
+        tier,
+        grantedAt:    serverTimestamp(),
+        method:       "admin",
+        grantedBy:    "admin",
+        grantedByUid: currentUser.uid,
+        grantedByEmail,
+        reason:       cleanReason,
+      }));
+
+      console.log("[V57.7/adminGrantFounder] granted " + tier + " to " + foundEmail + " (uid=" + uid + ") · redemptionId=" + redemptionRef.id);
+      return { ok: true, uid, email: foundEmail, displayName, redemptionId: redemptionRef.id };
+    } catch (e) {
+      console.error("[V57.7/adminGrantFounder] write failed:", e);
+      // Firestore permission denied = Firestore Rules not configured properly.
+      if (e && e.code === "permission-denied") {
+        return { ok: false, code: "permission-denied", error: "Firestore Rules blocked the write. Verify the admin rules are deployed (see ADMIN_TOOL_GUIDE.md)." };
+      }
+      return { ok: false, code: e.code, error: e.message };
+    }
+  },
+
+  /**
+   * V58 — Self-service founder code redemption.
+   *
+   * User pastes a code → frontend calls this → backend validates against
+   * Firestore `founder_codes` collection → if valid, grants tier + status
+   * active to user's subscription.
+   *
+   * Bypasses Stripe entirely. No Customer created, no Checkout, no webhook.
+   * Codes are pre-seeded by admin (Parn) in founder_codes collection.
+   *
+   * Schema (founder_codes/{code}):
+   *   {
+   *     code: "FOUNDER_KENNY",
+   *     type: "founder" | "campaign" | "referral",
+   *     tier: "premium" | "pro",
+   *     trialDays: null,       // null = lifetime, number = trial days
+   *     maxRedemptions: 1,
+   *     currentRedemptions: 0,
+   *     expiresAt: null,
+   *     campaign: "founder_launch",
+   *     redeemedBy: []
+   *   }
+   *
+   * Returns:
+   *   { ok: true, tier, founderCode, isLifetime, trialDays, message }
+   *   { ok: false, code: "invalid-code"|"expired"|"exhausted"|"already-redeemed"|... }
+   */
+  async redeemFounderCode(codeInput) {
+    if (!codeInput || typeof codeInput !== "string") {
+      return { ok: false, code: "invalid-input" };
+    }
+    if (!currentUser) {
+      return { ok: false, code: "not-signed-in", error: "Please sign in first" };
+    }
+
+    const normalizedCode = codeInput.trim().toUpperCase();
+
+    try {
+      const codeRef = doc(db, "founder_codes", normalizedCode);
+      const codeSnap = await getDoc(codeRef);
+
+      if (!codeSnap.exists()) {
+        return { ok: false, code: "invalid-code", error: "Code not found" };
+      }
+
+      const codeData = codeSnap.data();
+      const now = Date.now();
+
+      // Check expiration
+      if (codeData.expiresAt) {
+        const expiresMs = (codeData.expiresAt.toMillis)
+          ? codeData.expiresAt.toMillis()
+          : new Date(codeData.expiresAt).getTime();
+        if (expiresMs < now) {
+          return { ok: false, code: "expired", error: "This code has expired" };
+        }
+      }
+
+      // Check max redemptions
+      const currentCount = codeData.currentRedemptions || 0;
+      const maxAllowed = codeData.maxRedemptions || 1;
+      if (currentCount >= maxAllowed) {
+        return { ok: false, code: "exhausted", error: "This code has been fully redeemed" };
+      }
+
+      // Check if THIS user already redeemed it
+      const redeemedBy = codeData.redeemedBy || [];
+      const alreadyRedeemed = redeemedBy.some(r => r.uid === currentUser.uid);
+      if (alreadyRedeemed) {
+        return { ok: false, code: "already-redeemed", error: "You've already used this code" };
+      }
+
+      // Validate tier
+      const tier = codeData.tier;
+      if (tier !== "premium" && tier !== "pro") {
+        return { ok: false, code: "invalid-tier-in-code" };
+      }
+
+      // Compute trial end (if not lifetime)
+      let trialEndDate = null;
+      if (codeData.trialDays && codeData.trialDays > 0) {
+        trialEndDate = Timestamp.fromDate(new Date(now + codeData.trialDays * 24 * 60 * 60 * 1000));
+      }
+      const isLifetime = !codeData.trialDays;
+      const lockedRate = tier === "pro" ? 199 : 99;
+      const lookupKey = tier === "pro" ? "pro_founder" : "premium_founder";
+
+      // Update user subscription
+      const userRef = doc(db, "users", currentUser.uid);
+      await updateDoc(userRef, {
+        "subscription.status": "active",
+        "subscription.tier": tier,
+        "subscription.isFounder": codeData.type === "founder",
+        "subscription.founderCode": normalizedCode,
+        "subscription.founderGrantedAt": serverTimestamp(),
+        "subscription.founderGrantedBy": "self-redemption",
+        "subscription.founderGrantedByEmail": currentUser.email || null,
+        "subscription.founderReason": "Self-redeemed via in-app code entry (" + (codeData.type || "founder") + ")",
+        "subscription.trialEndDate": trialEndDate,
+        "subscription.lockedRate": lockedRate,
+        "subscription.lookupKey": lookupKey,
+        "subscription.isLifetime": isLifetime,
+        updatedAt: serverTimestamp(),
+      });
+
+      // Update the code document
+      await updateDoc(codeRef, {
+        currentRedemptions: currentCount + 1,
+        redeemedBy: [
+          ...redeemedBy,
+          {
+            uid: currentUser.uid,
+            email: currentUser.email || null,
+            redeemedAt: new Date().toISOString(),
+          }
+        ],
+        lastRedeemedAt: serverTimestamp(),
+      });
+
+      // Append audit log row
+      try {
+        await addDoc(collection(db, "code_redemptions"), clean({
+          userEmail:    currentUser.email || null,
+          userId:       currentUser.uid,
+          code:         normalizedCode,
+          codeType:     codeData.type || "founder",
+          tier,
+          isLifetime,
+          trialDays:    codeData.trialDays || null,
+          grantedAt:    serverTimestamp(),
+          method:       "self-service",
+          grantedBy:    "self",
+          grantedByEmail: currentUser.email || null,
+          campaign:     codeData.campaign || null,
+        }));
+      } catch (auditErr) {
+        // Audit log is non-critical — don't fail the redemption
+        console.warn("[V58/redeemFounderCode] audit log failed:", auditErr);
+      }
+
+      return {
+        ok: true,
+        tier,
+        founderCode: normalizedCode,
+        isLifetime,
+        trialDays: codeData.trialDays || null,
+        message: isLifetime
+          ? "You've unlocked " + (tier === "pro" ? "Pro" : "Premium") + " for life!"
+          : "You've unlocked a " + codeData.trialDays + "-day " + (tier === "pro" ? "Pro" : "Premium") + " trial!",
+      };
+    } catch (e) {
+      console.error("[V58/redeemFounderCode] threw:", e);
+      if (e && e.code === "permission-denied") {
+        return { ok: false, code: "permission-denied", error: "Firestore rules blocked the redemption. Check rules for founder_codes." };
+      }
+      return { ok: false, code: e.code || "fetch-failed", error: e.message };
+    }
+  },
+
+  /**
+   * V57.7 — List the most recent code_redemptions entries (audit log).
+   * Returns { ok, rows: [{id, userEmail, code, tier, method, grantedAt, ...}] }.
+   * Defaults to 20 rows. Pass `limit` (capped at 100) to fetch more.
+   */
+  async adminListRecentRedemptions(limit = 20) {
+    if (!currentUser) return { ok: false, code: "admin-not-signed-in" };
+    const cap = Math.min(Math.max(1, parseInt(limit, 10) || 20), 100);
+    try {
+      const q = query(
+        collection(db, "code_redemptions"),
+        orderBy("grantedAt", "desc"),
+        fsLimit(cap)
+      );
+      const snap = await getDocs(q);
+      const rows = [];
+      snap.forEach(d => {
+        const data = d.data() || {};
+        rows.push({
+          id: d.id,
+          userEmail:        data.userEmail || "",
+          userId:           data.userId || "",
+          userDisplayName:  data.userDisplayName || "",
+          code:             data.code || "",
+          codeType:         data.codeType || "",
+          tier:             data.tier || "",
+          method:           data.method || "",
+          grantedBy:        data.grantedBy || "",
+          grantedByEmail:   data.grantedByEmail || "",
+          reason:           data.reason || "",
+          grantedAt:        data.grantedAt && typeof data.grantedAt.toMillis === "function" ? data.grantedAt.toMillis() : null,
+        });
+      });
+      return { ok: true, rows };
+    } catch (e) {
+      console.error("[V57.7/adminListRecentRedemptions] query threw:", e);
+      if (e && e.code === "permission-denied") {
+        return { ok: false, code: "permission-denied", error: "Firestore Rules blocked the read. Verify admin rules are deployed." };
+      }
       return { ok: false, code: e.code, error: e.message };
     }
   },

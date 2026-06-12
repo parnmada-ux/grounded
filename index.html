@@ -1252,6 +1252,9 @@
           "Manage →": "จัดการ →",
           "May 2026": "พฤษภาคม 2569",
           "Current plan": "แผนปัจจุบัน",
+          // V57.7 — Founder badge
+          "Status": "สถานะ",
+          "Founder": "ผู้สนับสนุนรุ่นแรก",
           "Premium (trial)": "Premium (ทดลอง)",
           "Pro (trial)": "Pro (ทดลอง)",
           "Premium (paused)\" / \"Pro (paused)": "Premium (หยุดชั่วคราว)\" / \"Pro (หยุดชั่วคราว)",
@@ -2672,9 +2675,10 @@
     const HomeScreen = ({ data, onReflect, onLaunchpad, onFreeWrite, onGroundMe, onNav, trialDaysLeft, onTrialBannerTap, subState, onManageSubscription, onCrisisResources, lang }) => {
       const greeting = useMemo(() => {
         const h = new Date().getHours();
-        if (h < 12) return { text: 'Good morning', emoji: '☀️' };
-        if (h < 18) return { text: 'Good afternoon', emoji: '🌤️' };
-        return { text: 'Good evening', emoji: '🌙' };
+        // V57.6 (Charlotte feedback) — Capital A on time-of-day greetings
+        if (h < 12) return { text: 'Good Morning', emoji: '☀️' };
+        if (h < 18) return { text: 'Good Afternoon', emoji: '🌤️' };
+        return { text: 'Good Evening', emoji: '🌙' };
       }, []);
       // V43/Phase2: banner render also gated by PHASE_2_TRIAL_UI_ENABLED.
       // When OFF, banner suppressed even if trial state would normally show it.
@@ -5173,7 +5177,7 @@
        + member-since startedAt) and sync (openCustomerPortal helper) and lang
        ('th' | 'en' for date formatting). All new props are optional — screen
        degrades gracefully when pre-Backend / pre-trial. */
-    const AccountScreen = ({ draft, onUpdateDraft, onCommit, onExit, onManagePlan, onChangeEmail, onChangeMobile, onChangePassword, onDeleteAccount, groundedAuth, subState, sync, lang }) => {
+    const AccountScreen = ({ draft, onUpdateDraft, onCommit, onExit, onManagePlan, onChangeEmail, onChangeMobile, onChangePassword, onDeleteAccount, onApplyCode, groundedAuth, subState, sync, lang }) => {
       // Defensive read: draft should never be null while this screen is mounted
       // (enterAccount initializes it before navigating here), but if it is,
       // fall back to empty strings so the screen doesn't crash.
@@ -5354,6 +5358,84 @@
               </div>
             )}
 
+            {/* V58 — Hero Founder Badge (visible at top for founders only).
+                Hexagonal badge SVG with brand colors (green + gold accent),
+                personal greeting, and member-since specific date.
+                Per Parn approval: Option A "Hero Card Banner" with brand-design badge. */}
+            {subState && subState.isFounder && (
+              <div style={{
+                background: 'linear-gradient(135deg, #E8F5E9 0%, #F5F0E8 100%)',
+                border: '1px solid #C8D8C2',
+                borderRadius: '16px',
+                padding: '16px',
+                marginBottom: '20px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '14px',
+                position: 'relative',
+                overflow: 'hidden',
+              }}>
+                <div style={{
+                  position: 'absolute',
+                  top: '-20px',
+                  right: '-20px',
+                  width: '80px',
+                  height: '80px',
+                  background: 'radial-gradient(circle, rgba(255, 215, 0, 0.15) 0%, transparent 70%)',
+                  borderRadius: '50%',
+                  pointerEvents: 'none',
+                }}></div>
+                <svg width="52" height="52" viewBox="0 0 56 56" xmlns="http://www.w3.org/2000/svg"
+                  style={{ filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.1))', flexShrink: 0 }}>
+                  <polygon points="28,4 49,16 49,40 28,52 7,40 7,16" fill="#F5F0E8" stroke="#3B7A57" strokeWidth="2.5" />
+                  <polygon points="28,9 44,18 44,38 28,47 12,38 12,18" fill="none" stroke="#D4AF37" strokeWidth="1" opacity="0.6" />
+                  <g transform="translate(28, 28)">
+                    <path d="M 0,-12 C -6,-12 -10,-6 -10,0 C -10,4 -8,8 -4,10 C -2,8 0,6 0,0 C 0,6 2,8 4,10 C 8,8 10,4 10,0 C 10,-6 6,-12 0,-12 Z" fill="#3B7A57" opacity="0.9" />
+                    <line x1="0" y1="-10" x2="0" y2="10" stroke="#2D5F40" strokeWidth="0.8" />
+                  </g>
+                </svg>
+                <div style={{ flex: 1 }}>
+                  <p style={{ fontWeight: 700, fontSize: '14px', color: '#3B7A57', marginBottom: '3px' }}>
+                    ✨ {lang === 'th' ? 'ผู้สนับสนุนรุ่นแรก' : 'Founder'} · {subState.tier === 'pro' ? 'Pro' : 'Premium'}
+                  </p>
+                  <p style={{ fontSize: '12px', color: '#5A6B5E', marginBottom: '2px' }}>
+                    {lang === 'th'
+                      ? <>ยินดีต้อนรับสู่ MindoDay{name ? ' ' + name : ''} 💚</>
+                      : <>Welcome to MindoDay{name ? ', ' + name : ''} 💚</>}
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* V58 — Apply Code shortcut (visible for trial users only).
+                Trial users see a prominent "🎁 Have a founder code?" button
+                that opens the code redemption screen. Per Parn strategic
+                decision: code-required model where founders/campaign users
+                self-redeem instead of going through Stripe Checkout. */}
+            {typeof onApplyCode === 'function' && subState && subState.status === 'trial' && (
+              <button
+                onClick={onApplyCode}
+                className="w-full p-4 mb-5 text-left transition-all active:scale-[0.99]"
+                style={{
+                  background: 'linear-gradient(135deg, #FFF8E7 0%, #F5F0E8 100%)',
+                  border: '2px dashed #D4AF37',
+                  borderRadius: '14px',
+                }}
+              >
+                <div className="flex items-center gap-3">
+                  <div style={{ fontSize: '28px' }}>🎁</div>
+                  <div className="flex-1">
+                    <p className="font-bold text-[14px] text-g-charcoal" style={{ marginBottom: '2px' }}>
+                      {lang === 'th' ? 'มี code ของ founder?' : 'Have a founder code?'}
+                    </p>
+                    <p className="text-[11px] text-g-gray">
+                      {lang === 'th' ? 'พิมพ์เพื่อปลดล็อกสิทธิ์ตลอดชีพ →' : 'Apply it to unlock lifetime access →'}
+                    </p>
+                  </div>
+                </div>
+              </button>
+            )}
+
             {/* Display name — inline editable, writes to draft */}
             <div className="mb-3">
               <p className="text-g-gray text-[13px] mb-1">{t("Display name")}</p>
@@ -5478,17 +5560,28 @@
               <div className="flex items-center justify-between py-1">
                 <span className="font-bold text-g-charcoal text-[14px]">{t("Current plan")}</span>
                 <span className="text-g-charcoal text-[14px]">
-                  {/* V54 — pull from subState when present, fall back to existing copy. */}
+                  {/* V54 — pull from subState when present, fall back to existing copy.
+                      V57.7 — append " · Founder access" when subState.isFounder. */}
                   {(() => {
                     if (!subState) return 'Premium (trial)';
                     const tierName = subState.tier === 'pro' ? 'Pro' : 'Premium';
+                    const founderSuffix = subState.isFounder ? ' · Founder access' : '';
                     if (_isSubTrial) return `${tierName} (trial)`;
                     // V55 P0: _subStatus is normalized at L4370 — 'cancelled' is now collapsed to 'canceled'.
                     if (_subStatus === 'lapsed' || _subStatus === 'canceled' || _subStatus === 'expired') return `${tierName} (paused)`;
-                    return tierName;
+                    return tierName + founderSuffix;
                   })()}
                 </span>
               </div>
+              {/* V57.7 — Founder badge row. Only renders when isFounder=true.
+                  Distinct visual signal so Charlotte/Kenny/etc see their granted
+                  status at-a-glance even if they miss the inline suffix above. */}
+              {subState && subState.isFounder && (
+                <div className="flex items-center justify-between py-1">
+                  <span className="font-bold text-g-charcoal text-[14px]">{t("Status")}</span>
+                  <span className="text-[14px]" style={{ color: '#3B7A57' }}>🌿 {t("Founder")}</span>
+                </div>
+              )}
               {/* V54 — Trial ends / Next billing row. Hidden when subState
                   doesn't provide a usable date (pre-Backend, pre-trial, or
                   lapsed without a renewal date). */}
@@ -5663,6 +5756,127 @@
                   </button>
                 </div>
               </div>
+            </div>
+          )}
+        </div>
+      );
+    };
+
+    // ============================================================
+    // V58 — APPLY FOUNDER CODE (Account → Apply Code tap → enter → unlock)
+    // Self-service code redemption that bypasses Stripe entirely.
+    // User pastes code → backend validates → grants tier/founder status.
+    // Used by founders (FOUNDER_*), campaigns (WELCOME2026), referrals.
+    // ============================================================
+    const ApplyCodeScreen = ({ sync, lang, onBack, onSuccess }) => {
+      const [code, setCode] = useState('');
+      const [pending, setPending] = useState(false);
+      const [error, setError] = useState(null);
+      const [success, setSuccess] = useState(null);
+      const isThai = lang === 'th';
+
+      const handleApply = async () => {
+        if (!code.trim()) return;
+        setPending(true);
+        setError(null);
+        try {
+          if (!sync || typeof sync.redeemFounderCode !== 'function') {
+            setError(isThai ? 'ระบบยังไม่พร้อม — ลองใหม่ภายหลัง' : 'Code redemption not available yet.');
+            setPending(false);
+            return;
+          }
+          const result = await sync.redeemFounderCode(code);
+          if (result.ok) {
+            setSuccess(result);
+            setTimeout(() => { if (onSuccess) onSuccess(result); }, 2500);
+          } else {
+            const errMap = {
+              'invalid-code': isThai ? 'code นี้ใช้ไม่ได้ — โปรดตรวจสอบ' : 'This code is not valid.',
+              'expired': isThai ? 'code นี้หมดอายุแล้ว' : 'This code has expired.',
+              'exhausted': isThai ? 'code นี้ถูกใช้ครบจำนวนแล้ว' : 'This code has been fully redeemed.',
+              'already-redeemed': isThai ? 'คุณใช้ code นี้ไปแล้ว' : "You've already used this code.",
+              'not-signed-in': isThai ? 'โปรดเข้าสู่ระบบก่อน' : 'Please sign in first.',
+            };
+            setError(errMap[result.code] || result.error || (isThai ? 'เกิดข้อผิดพลาด' : 'Something went wrong.'));
+          }
+        } catch (e) {
+          setError(isThai ? 'ปัญหาเครือข่าย — ลองใหม่' : 'Network error. Please try again.');
+        } finally {
+          setPending(false);
+        }
+      };
+
+      return (
+        <div className="screen min-h-screen p-5" style={{ background: '#E8F0E5' }}>
+          <div className="flex items-center justify-between mb-6 pt-2">
+            <button onClick={onBack} className="text-g-charcoal text-lg">←</button>
+            <h2 className="font-serif text-xl text-g-charcoal">{isThai ? 'ใช้ code' : 'Apply Code'}</h2>
+            <span style={{ width: 18 }}></span>
+          </div>
+
+          {success ? (
+            <div className="text-center py-10">
+              <div className="text-5xl mb-3">🎉</div>
+              <h3 className="font-serif text-xl mb-2" style={{ color: '#3B7A57' }}>
+                {isThai ? 'ยินดีต้อนรับสู่ครอบครัว!' : 'Welcome to the family!'}
+              </h3>
+              <p className="text-g-charcoal text-sm">
+                {isThai
+                  ? <>ปลดล็อก <strong>{success.tier === 'pro' ? 'Pro' : 'Premium'} · Founder access</strong>{success.isLifetime ? ' ตลอดชีพ' : ''} 💚</>
+                  : <>You've unlocked <strong>{success.tier === 'pro' ? 'Pro' : 'Premium'} · Founder access</strong>{success.isLifetime ? ' for life' : ''} 💚</>
+                }
+              </p>
+              <p className="text-g-gray text-sm mt-4">
+                {isThai ? 'กำลังพาไปหน้าหลัก...' : 'Taking you home...'}
+              </p>
+            </div>
+          ) : (
+            <div className="text-center pt-6">
+              <div className="text-6xl mb-4">🌿</div>
+              <h2 className="font-serif text-2xl text-g-charcoal mb-2">
+                {isThai ? 'ยินดีต้อนรับสู่ MindoDay' : 'Welcome to MindoDay'}
+              </h2>
+              <p className="text-g-charcoal text-sm mb-8">
+                {isThai
+                  ? <>พิมพ์ code ของคุณ<br/>เพื่อปลดล็อกเส้นทางของคุณ</>
+                  : <>Enter your code<br/>to unlock your journey</>
+                }
+              </p>
+
+              <div className="bg-white rounded-2xl p-1 mb-4" style={{ border: '2px solid #3B7A57' }}>
+                <input
+                  type="text"
+                  value={code}
+                  onChange={e => setCode(e.target.value.toUpperCase())}
+                  placeholder="FOUNDER_____"
+                  className="w-full p-4 text-center text-lg font-bold tracking-widest bg-transparent border-0 outline-none"
+                  style={{ fontFamily: 'monospace', color: '#2D3B30' }}
+                  autoFocus
+                  disabled={pending}
+                />
+              </div>
+
+              {error && (
+                <p className="text-sm mb-3" style={{ color: '#C97C7C' }}>{error}</p>
+              )}
+
+              <button
+                onClick={handleApply}
+                disabled={pending || !code.trim()}
+                className="w-full py-4 bg-g-deep text-white rounded-xl font-semibold mb-4 disabled:opacity-60"
+                style={{ background: '#3B7A57' }}
+              >
+                {pending
+                  ? (isThai ? 'กำลังตรวจสอบ...' : 'Verifying...')
+                  : (isThai ? 'ใช้ code นี้ →' : 'Apply code →')}
+              </button>
+
+              <p className="text-g-charcoal text-sm">
+                {isThai ? 'ยังไม่มี code?' : "Don't have a code?"}{' '}
+                <a href="mailto:hello@mindoday.com" className="font-semibold" style={{ color: '#3B7A57', textDecoration: 'underline' }}>
+                  {isThai ? 'ติดต่อเรา' : 'Contact us'}
+                </a>
+              </p>
             </div>
           )}
         </div>
@@ -6342,8 +6556,21 @@
             <div className="card-outline p-5">
               <h4 className="font-bold text-g-charcoal text-[14px] mb-2">{_isThai ? '💬 ติดต่อเรา' : '💬 CONTACT US'}</h4>
               <div className="border-t border-g-line pt-3">
-                <p className="text-g-charcoal text-sm leading-relaxed">{_isThai ? 'มีคำถามหรือข้อเสนอแนะ?' : 'Questions or feedback?'}</p>
-                <p className="text-g-charcoal text-sm leading-relaxed underline">hello@mindoday.com</p>
+                {/* V57.6 (Charlotte feedback) — fix double-underline.
+                    iOS Safari auto-detects email patterns and adds its own
+                    underline on top of any styling. Solution: proper <a>
+                    tag with mailto + explicit style override prevents iOS
+                    decoration. "Questions or feedback?" gets no underline. */}
+                <p className="text-g-charcoal text-sm leading-relaxed" style={{ textDecoration: 'none' }}>
+                  {_isThai ? 'มีคำถามหรือข้อเสนอแนะ?' : 'Questions or feedback?'}
+                </p>
+                <a
+                  href="mailto:hello@mindoday.com"
+                  className="text-g-charcoal text-sm leading-relaxed"
+                  style={{ textDecoration: 'underline', textDecorationSkipInk: 'auto' }}
+                >
+                  hello@mindoday.com
+                </a>
               </div>
             </div>
             <div className="card-outline p-5">
@@ -7296,6 +7523,262 @@
     };
 
     // ============================================================
+    // V57.7 — ADMIN FOUNDER GRANT TOOL
+    // ----------------------------------------------------------------
+    //  ⚠️ SECURITY NOTE — this is a CLIENT-SIDE password gate. It is
+    //  bypassable by anyone who view-sources the file. The REAL security
+    //  boundary is Firestore Rules: only Parn's UID (hardcoded in rules)
+    //  may write to other users' subscription docs. See
+    //  ADMIN_TOOL_GUIDE.md → "Firestore rules required".
+    //
+    //  Routes: visit /?admin=1 or #admin to access. Password gate then
+    //  AdminScreen renders. Admin user must be signed in for writes to
+    //  succeed (Firestore Rules enforce on Parn-UID match).
+    // ============================================================
+    const ADMIN_PASSWORD_V57_7 = "mindoday2026";
+
+    const AdminGate = ({ onUnlock }) => {
+      const [pw, setPw]         = useState('');
+      const [err, setErr]       = useState('');
+      const submit = (e) => {
+        if (e && e.preventDefault) e.preventDefault();
+        if (pw === ADMIN_PASSWORD_V57_7) {
+          setErr('');
+          onUnlock();
+        } else {
+          setErr('Incorrect password.');
+          setPw('');
+        }
+      };
+      return (
+        <div className="phone-frame" style={{ backgroundColor: '#F0F7F4' }}>
+          <div className="flex-1 flex flex-col items-center justify-center px-8 pb-20 text-center">
+            <div className="text-2xl mb-3">🔐</div>
+            <h2 className="text-[20px] font-serif font-semibold text-g-deep mb-5">
+              MindoDay Admin
+            </h2>
+            <form onSubmit={submit} className="w-full">
+              <input
+                type="password"
+                value={pw}
+                onChange={(e) => { setPw(e.target.value); setErr(''); }}
+                placeholder="Admin password"
+                autoFocus
+                className="input-field w-full mb-3"
+                aria-label="Admin password"
+              />
+              {err && <p className="text-[#C97C7C] text-sm mb-3">{err}</p>}
+              <PillButton onClick={submit}>Continue</PillButton>
+            </form>
+            <p className="text-g-gray text-xs italic mt-6 px-2 leading-relaxed">
+              This is an internal tool. Founder grants made here are logged
+              to <span className="font-mono">/code_redemptions</span>.
+            </p>
+          </div>
+        </div>
+      );
+    };
+
+    const AdminScreen = ({ groundedApi, onExit }) => {
+      const [email,       setEmail]       = useState('');
+      const [tier,        setTier]        = useState('premium');
+      const [founderCode, setFounderCode] = useState('');
+      const [reason,      setReason]      = useState('');
+      const [pending,     setPending]     = useState(false);
+      const [flash,       setFlash]       = useState(null);  // {type:'ok'|'err', text}
+      const [redemptions, setRedemptions] = useState([]);
+      const [loadingList, setLoadingList] = useState(false);
+
+      const _sync = groundedApi && groundedApi.groundedSync;
+      const _auth = groundedApi && groundedApi.groundedAuth;
+      const adminEmail = (_auth && _auth.currentUser && _auth.currentUser.email) || null;
+      const adminSignedIn = !!adminEmail;
+
+      const refreshList = async () => {
+        if (!_sync || !_sync.adminListRecentRedemptions) return;
+        setLoadingList(true);
+        try {
+          const r = await _sync.adminListRecentRedemptions(20);
+          if (r && r.ok) setRedemptions(r.rows || []);
+          else setRedemptions([]);
+        } finally {
+          setLoadingList(false);
+        }
+      };
+
+      useEffect(() => {
+        if (adminSignedIn) refreshList();
+        // eslint-disable-next-line
+      }, [adminSignedIn]);
+
+      const handleGrant = async (e) => {
+        if (e && e.preventDefault) e.preventDefault();
+        if (!email.trim()) { setFlash({ type: 'err', text: 'Email is required.' }); return; }
+        if (!_sync || !_sync.adminGrantFounder) {
+          setFlash({ type: 'err', text: 'Backend not ready — try again in a moment.' });
+          return;
+        }
+        if (!adminSignedIn) {
+          setFlash({ type: 'err', text: 'Sign in to MindoDay first — Firestore Rules require admin UID.' });
+          return;
+        }
+        setPending(true);
+        setFlash(null);
+        try {
+          const r = await _sync.adminGrantFounder({
+            email: email.trim(),
+            tier,
+            founderCode: founderCode.trim(),
+            reason: reason.trim(),
+          });
+          if (r && r.ok) {
+            setFlash({
+              type: 'ok',
+              text: 'Granted ' + (tier === 'premium' ? 'Premium' : 'Pro') +
+                    ' forever to ' + r.email +
+                    (r.displayName ? ' (' + r.displayName + ')' : '') + '.',
+            });
+            setEmail(''); setFounderCode(''); setReason('');
+            await refreshList();
+          } else {
+            let msg = (r && r.error) || (r && r.code) || 'Grant failed.';
+            if (r && r.code === 'not-found') msg = 'No user with that email — they may not have a Firestore doc yet. Ask them to sign in once, then retry.';
+            if (r && r.code === 'multiple') msg = 'Multiple users matched that email. Disambiguate manually in Firebase Console.';
+            if (r && r.code === 'permission-denied') msg = 'Firestore Rules blocked the write. Check ADMIN_TOOL_GUIDE.md → Firestore rules required.';
+            if (r && r.code === 'admin-not-signed-in') msg = 'Sign in to MindoDay first.';
+            setFlash({ type: 'err', text: msg });
+          }
+        } catch (err) {
+          console.error('[V57.7/AdminScreen] grant threw:', err);
+          setFlash({ type: 'err', text: 'Unexpected error: ' + (err && err.message ? err.message : String(err)) });
+        } finally {
+          setPending(false);
+        }
+      };
+
+      const formatMs = (ms) => {
+        if (!ms) return '—';
+        try {
+          return new Date(ms).toLocaleString('en-US', {
+            year: 'numeric', month: 'short', day: 'numeric',
+            hour: '2-digit', minute: '2-digit',
+          });
+        } catch { return '—'; }
+      };
+
+      return (
+        <div className="phone-frame" style={{ backgroundColor: '#F8FBF9', overflowY: 'auto' }}>
+          <div className="px-5 pt-5 pb-24">
+            <div className="flex items-center justify-between mb-4">
+              <span className="text-g-deep font-semibold text-base">🌿 MindoDay Admin</span>
+              <button onClick={onExit} className="text-g-gray text-sm underline">Exit</button>
+            </div>
+
+            {!adminSignedIn && (
+              <div className="card-outline px-3 py-2 mb-4" style={{ background: '#FFF6E6' }}>
+                <p className="text-[12px] text-g-charcoal leading-relaxed">
+                  ⚠️ You are not signed in. Grants will fail (Firestore Rules require admin UID).
+                  Sign in to MindoDay first, then return to /admin.
+                </p>
+              </div>
+            )}
+            {adminSignedIn && (
+              <p className="text-[11px] text-g-gray mb-3">Signed in as <span className="font-mono">{adminEmail}</span></p>
+            )}
+
+            {/* Grant form */}
+            <div className="card-outline px-4 py-4 mb-5">
+              <p className="font-bold text-g-charcoal text-[14px] mb-3">Grant Founder access</p>
+              <form onSubmit={handleGrant}>
+                <label className="text-g-gray text-[12px] block mb-1">User email</label>
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="user@example.com"
+                  className="input-field w-full mb-3"
+                  required
+                />
+                <label className="text-g-gray text-[12px] block mb-1">Tier</label>
+                <select
+                  value={tier}
+                  onChange={(e) => setTier(e.target.value)}
+                  className="input-field w-full mb-3"
+                >
+                  <option value="premium">Premium (฿169/mo locked)</option>
+                  <option value="pro">Pro (฿89/mo locked)</option>
+                </select>
+                <label className="text-g-gray text-[12px] block mb-1">Founder code (optional, for tracking)</label>
+                <input
+                  type="text"
+                  value={founderCode}
+                  onChange={(e) => setFounderCode(e.target.value)}
+                  placeholder="e.g. FOUNDER200"
+                  className="input-field w-full mb-3"
+                />
+                <label className="text-g-gray text-[12px] block mb-1">Reason (optional)</label>
+                <input
+                  type="text"
+                  value={reason}
+                  onChange={(e) => setReason(e.target.value)}
+                  placeholder="e.g. Launch-week tester, never reached Stripe"
+                  className="input-field w-full mb-3"
+                />
+                {flash && (
+                  <p
+                    className="text-[13px] mb-3 leading-relaxed"
+                    style={{ color: flash.type === 'ok' ? '#3B7A57' : '#C97C7C' }}
+                  >
+                    {flash.text}
+                  </p>
+                )}
+                <PillButton onClick={handleGrant} disabled={pending}>
+                  {pending ? 'Granting…' : 'Grant'}
+                </PillButton>
+              </form>
+            </div>
+
+            {/* Recent redemptions */}
+            <div className="card-outline px-4 py-4">
+              <div className="flex items-center justify-between mb-3">
+                <p className="font-bold text-g-charcoal text-[14px]">Recent grants</p>
+                <button onClick={refreshList} className="text-g-gray text-[12px] underline">Refresh</button>
+              </div>
+              {loadingList && <p className="text-g-gray text-[12px] italic">Loading…</p>}
+              {!loadingList && redemptions.length === 0 && (
+                <p className="text-g-gray text-[12px] italic">No grants yet.</p>
+              )}
+              {!loadingList && redemptions.length > 0 && (
+                <div className="space-y-3">
+                  {redemptions.map((r) => (
+                    <div key={r.id} className="border-t border-g-line pt-2 first:border-t-0 first:pt-0">
+                      <div className="flex items-center justify-between">
+                        <span className="font-mono text-[12px] text-g-charcoal">{r.userEmail || '—'}</span>
+                        <span className="text-[11px] text-g-gray">{formatMs(r.grantedAt)}</span>
+                      </div>
+                      <div className="text-[11px] text-g-gray mt-1">
+                        <span className="font-semibold text-g-deep">{r.tier || '?'}</span>
+                        {' · '}
+                        <span>{r.method || '?'}</span>
+                        {r.code && r.code !== 'ADMIN_GRANT' ? <> · code: <span className="font-mono">{r.code}</span></> : null}
+                        {r.reason ? <> · {r.reason}</> : null}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <p className="text-g-gray text-[11px] italic mt-6 leading-relaxed">
+              Grants are logged to Firestore <span className="font-mono">/code_redemptions</span>.
+              See AUDIT_LOG_SCHEMA.md for the field reference.
+            </p>
+          </div>
+        </div>
+      );
+    };
+
+    // ============================================================
     // APP — Screen Router
     // ============================================================
     const App = () => {
@@ -7313,6 +7796,22 @@
       // the user reached the screen (Settings menu → CR → Back went Home, not
       // back to Settings). Mirrors the groundMeFrom pattern just above. */
       const [crisisResourcesFrom, setCrisisResourcesFrom] = useState('home');
+
+      // V57.7 — Admin route detection + unlock state.
+      // Activated by ?admin=1 query or #admin hash. The password gate (AdminGate)
+      // sets adminUnlocked=true on correct entry; AdminScreen then renders.
+      // The REAL security boundary is Firestore Rules (see ADMIN_TOOL_GUIDE.md).
+      const _adminRouteRequested = (() => {
+        if (typeof window === 'undefined' || !window.location) return false;
+        try {
+          const qs = new URLSearchParams(window.location.search);
+          if (qs.has('admin')) return true;
+          if ((window.location.hash || '').toLowerCase() === '#admin') return true;
+          if ((window.location.pathname || '').toLowerCase().endsWith('/admin')) return true;
+        } catch (e) {}
+        return false;
+      })();
+      const [adminUnlocked, setAdminUnlocked] = useState(false);
       const [activeMirrorField, setActiveMirrorField] = useState(null);
 
       // V15: skip echoing storage on hydration ticks (server snapshots, initial localStorage load)
@@ -8397,11 +8896,36 @@
         console.warn('[V49.1/Fix1+2] Existing user routed to onboarding screen "' + screen + '" — redirecting to home');
         _preGateScreen = 'home';
       }
-      const effectiveScreen = _gateRedirect ? _gateRedirect.to : _preGateScreen;
+      // V57.7 — /admin route SHORT-CIRCUITS gate redirect + all routing logic.
+      // Anyone (signed in or not) hitting ?admin=1 sees AdminGate; correct
+      // password swaps to AdminScreen. Firestore Rules still enforce writes.
+      const effectiveScreen = _adminRouteRequested
+        ? 'admin'
+        : (_gateRedirect ? _gateRedirect.to : _preGateScreen);
       const _forcedTierPick = !!(_gateRedirect && _gateRedirect.forcedChoice);
 
       let view = null;
       switch (effectiveScreen) {
+        // V57.7 — Admin route. Gate first; then AdminScreen. Exit returns
+        // to welcome and clears the ?admin= param so refresh stays out.
+        case 'admin':
+          view = adminUnlocked
+            ? <AdminScreen
+                groundedApi={groundedApi}
+                onExit={() => {
+                  setAdminUnlocked(false);
+                  try {
+                    const url = new URL(window.location.href);
+                    url.searchParams.delete('admin');
+                    if ((url.hash || '').toLowerCase() === '#admin') url.hash = '';
+                    window.history.replaceState({}, '', url.pathname + (url.search || '') + (url.hash || ''));
+                  } catch (e) {}
+                  // Force a re-evaluation by setting screen so the route guard takes over.
+                  setScreen('welcome');
+                }}
+              />
+            : <AdminGate onUnlock={() => setAdminUnlocked(true)} />;
+          break;
         case 'welcome':
           view = <WelcomeScreen
             hasGoogleAuth={!!groundedApi}
@@ -9116,6 +9640,8 @@
             onChangeEmail={() => go('change_email')}
             onChangeMobile={() => go('change_mobile')}
             onChangePassword={() => go('change_password')}
+            // V58 — Apply Code shortcut → opens code redemption screen
+            onApplyCode={() => go('apply_code')}
             // V50 Fix #C2: pass groundedAuth for emailVerified status reads.
             groundedAuth={groundedApi && groundedApi.groundedAuth}
             /* V54 — Pass subState + sync (for Manage subscription button +
@@ -9173,6 +9699,15 @@
               updateAccountDraft({ email: newEmail });
               go('account');
             }} />; break;
+        case 'apply_code':
+          // V58 — Self-service founder code redemption (Areena/Owen/Pun + future founders).
+          // Bypasses Stripe entirely. User enters code → backend grants tier.
+          view = <ApplyCodeScreen
+            sync={groundedApi && groundedApi.groundedSync}
+            lang={(data && data.lang) || 'en'}
+            onBack={() => go('account')}
+            onSuccess={() => go('account')}
+          />; break;
         case 'change_mobile':
           // V15/Bug4: writes to accountDraft (not data.user). Same commit point as email.
           view = <ChangeMobileScreen data={data}
