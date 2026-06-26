@@ -133,9 +133,16 @@
     }
   </script>
 
-  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <!-- V58.1 (26 Jun 2026) — P0 fix for blank screen.
+       Babel-standalone CDN was UNPINNED, pulling latest. Babel team released
+       a breaking change between 12-18 Jun 2026 that broke our inline
+       <script type="text/babel"> transformation, causing "Cannot use import
+       statement outside a module" error and white-screen for ALL users.
+       Pinning to 7.25.6 (last known-good major) prevents future re-breaks.
+       Also pin React to 18.3.1 explicit (was 18.x latest) for same reason. -->
+  <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.25.6/babel.min.js"></script>
 
   <!-- ── V15 BACKEND BRIDGE ──────────────────────────────────────────── -->
   <script>
