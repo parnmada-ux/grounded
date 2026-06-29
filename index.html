@@ -4627,7 +4627,7 @@
         setPortalPending(true);
         try {
           // V49 hotfix: window.location.origin strips the /grounded/ subdir
-          // (deployed at parnmada-ux.github.io/grounded/). Derive baseUrl from
+          // (deployed at mindoday.com/). Derive baseUrl from
           // origin + pathname-without-last-segment so the redirect lands inside
           // the subdir. Regex /\/[^/]*$/ strips the trailing file ("index.html"
           // or "grounded PWA V49.html") if present, keeps directory path intact.
@@ -7534,7 +7534,7 @@
     // ----------------------------------------------------------------
     //  ⚠️ SECURITY NOTE — this is a CLIENT-SIDE password gate. It is
     //  bypassable by anyone who view-sources the file. The REAL security
-    //  boundary is Firestore Rules: only Parn's UID (hardcoded in rules)
+    //  boundary is Firestore Rules: only admin UID (hardcoded in rules)
     //  may write to other users' subscription docs. See
     //  ADMIN_TOOL_GUIDE.md → "Firestore rules required".
     //

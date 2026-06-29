@@ -1219,7 +1219,7 @@ const groundedSync = {
    *   opts:  { successUrl, cancelUrl }  — explicit absolute URLs (recommended)
    *          OR { returnPath: '/path' } — helper derives successUrl + cancelUrl
    *                                       by appending ?checkout=success / cancel
-   *          OR omitted                — defaults to parnmada-ux.github.io/grounded
+   *          OR omitted                — defaults to mindoday.com
    */
   async startCheckout(tier, opts) {
     if (tier !== "premium" && tier !== "pro") {
@@ -1234,13 +1234,13 @@ const groundedSync = {
       successUrl = opts.successUrl;
       cancelUrl  = opts.cancelUrl;
       if (!successUrl || !cancelUrl) {
-        const base = opts.returnPath || "https://parnmada-ux.github.io/grounded";
+        const base = opts.returnPath || "https://mindoday.com";
         const sep  = base.includes("?") ? "&" : "?";
         successUrl = successUrl || `${base}${sep}checkout=success`;
         cancelUrl  = cancelUrl  || `${base}${sep}checkout=cancel`;
       }
     } else {
-      const base = "https://parnmada-ux.github.io/grounded";
+      const base = "https://mindoday.com";
       successUrl = `${base}?checkout=success`;
       cancelUrl  = `${base}?checkout=cancel`;
     }
@@ -1340,7 +1340,7 @@ const groundedSync = {
    *
    *   opts:  { returnUrl: 'https://...' }  — absolute URL (recommended)
    *          OR { returnPath: '/path' }    — helper resolves to absolute
-   *          OR omitted                    — defaults to parnmada-ux.github.io/grounded
+   *          OR omitted                    — defaults to mindoday.com
    *
    *   404 'no-subscription' means user has no Stripe customer record yet
    *   (they've never completed Checkout).
@@ -1351,11 +1351,11 @@ const groundedSync = {
 
     let returnUrl;
     if (opts && typeof opts === "object") {
-      returnUrl = opts.returnUrl || opts.returnPath || "https://parnmada-ux.github.io/grounded";
+      returnUrl = opts.returnUrl || opts.returnPath || "https://mindoday.com";
     } else if (typeof opts === "string") {
       returnUrl = opts;
     } else {
-      returnUrl = "https://parnmada-ux.github.io/grounded";
+      returnUrl = "https://mindoday.com";
     }
 
     let token;
@@ -1755,7 +1755,7 @@ const groundedSync = {
   //
   //  The client-side `/admin` password gate is UX-only — it prevents random
   //  users from stumbling onto the form. The REAL security boundary is
-  //  Firestore Security Rules: only Parn's UID (or a custom-claim-marked
+  //  Firestore Security Rules: only admin UID (or a custom-claim-marked
   //  admin) may write to other users' subscription docs. See
   //  ADMIN_TOOL_GUIDE.md → "Firestore rules required" for the rule snippet.
   //
@@ -1793,7 +1793,7 @@ const groundedSync = {
       return { ok: false, code: "invalid-email" };
     }
     if (!currentUser) {
-      return { ok: false, code: "admin-not-signed-in", error: "Sign in first — Firestore rules require Parn's UID." };
+      return { ok: false, code: "admin-not-signed-in", error: "Sign in first — Firestore rules require admin UID." };
     }
     const normalized = email.trim().toLowerCase();
     try {
@@ -1836,7 +1836,7 @@ const groundedSync = {
     if (!email || typeof email !== "string") return { ok: false, code: "invalid-email" };
     if (tier !== "premium" && tier !== "pro") return { ok: false, code: "invalid-tier" };
     if (!currentUser) {
-      return { ok: false, code: "admin-not-signed-in", error: "Sign in first — Firestore rules require Parn's UID." };
+      return { ok: false, code: "admin-not-signed-in", error: "Sign in first — Firestore rules require admin UID." };
     }
 
     const lookup = await this.adminFindUserByEmail(email);
